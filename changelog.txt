@@ -1,0 +1,5 @@
+
+Claas, 2016-02-06:
+- At startup a splash screen will be displayed. You may personalize it for your own purposes.
+
+
