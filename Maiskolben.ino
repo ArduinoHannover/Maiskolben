@@ -7,6 +7,14 @@
 #define VERSION	100
 #define EEPROM_CHECK 42
 
+// splash screen
+#define SPLASH_SHOW 1
+#define SPLASH_TIME 2000
+#define SPLASH_LINE1 'Property of'
+#define SPLASH_LINE1 '  Name'
+#define SPLASH_LINE1 '  Street'
+#define SPLASH_LINE1 '  City'
+
 #define STBY_TEMP	150
 //SOFTWARE CAN'T MEASURE MORE THAN 422, IF SET TO >= 422 IT'S LIKELY TO KILL YOUR TIP!
 //If read 1024 on Analog in, the tip is turned off.
@@ -73,6 +81,9 @@ void setup() {
 	TCCR2B = TCCR2B & 0xFF;
 
 	display.begin();
+	if (SPLASH_SHOW != 0)
+		sayHello();
+	
 	display.clearDisplay();
 	if (EEPROM.read(0) != EEPROM_CHECK) {
 		EEPROM.update(0, EEPROM_CHECK);
@@ -94,6 +105,19 @@ void setup() {
 	last_measured = getTemperature();
 	Timer1.initialize(1000);
 	Timer1.attachInterrupt(timer_isr);
+}
+
+void sayHello() {
+	display.clearDisplay();
+	display.setTextSize(1);
+	display.setCursor(0,10);
+	display.print(SPLASH_LINE1);
+	display.setCursor(0,20);
+	display.print(SPLASH_LINE2);
+	display.setCursor(0,30);
+	display.print(SPLASH_LINE3);
+	display.setCursor(0,40);
+	display.print(SPLASH_LINE4);
 }
 
 void updateEEPROM() {
