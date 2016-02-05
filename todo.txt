@@ -1,5 +1,5 @@
 
-Claas, 2016-ß2-06:
+Claas, 2016-02-06:
 - standy temp should never be higher than the lowest stored temperatur -> t_stby = min (150,temp1,temp2,temp3)
 
 
