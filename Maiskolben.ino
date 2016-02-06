@@ -11,9 +11,9 @@
 #define SPLASH_SHOW 1
 #define SPLASH_TIME 2000
 #define SPLASH_LINE1 'Property of'
-#define SPLASH_LINE1 '  Name'
-#define SPLASH_LINE1 '  Street'
-#define SPLASH_LINE1 '  City'
+#define SPLASH_LINE2 '  Name'
+#define SPLASH_LINE3 '  Street'
+#define SPLASH_LINE4 '  City'
 
 #define STBY_TEMP	150
 //SOFTWARE CAN'T MEASURE MORE THAN 422, IF SET TO >= 422 IT'S LIKELY TO KILL YOUR TIP!
