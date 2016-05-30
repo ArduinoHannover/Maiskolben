@@ -1,15 +1,17 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_PCD8544.h>
+#include <PID_v1.h>
 #include <EEPROM.h>
 #include "TimerOne.h"
 
 #define VERSION	100
 #define EEPROM_CHECK 42
+//#define HAS_BATTERY
 
 #define STBY_TEMP	150
-//SOFTWARE CAN'T MEASURE MORE THAN 422, IF SET TO >= 422 IT'S LIKELY TO KILL YOUR TIP!
-//If read 1024 on Analog in, the tip is turned off.
+//SOFTWARE CAN'T MEASURE MORE THAN 422 DUE TO RESISTOR CONFIGURATION, IF SET TO >= 422 IT'S LIKELY TO KILL YOUR TIP!
+//If read 1024 on Analog in, the tip is turned off
 #define MAX_TEMP	400
 #define MIN_TEMP	100
 
@@ -30,10 +32,15 @@
 #define SW_UP		A5
 #define BATTERY_IN	A6
 
+#define kp			0.1
+#define ki			0.0001
+#define kd			0.0
+
 #define TIME_DISP_REFRESH_IN_MS 300
 #define TIME_SW_POLL_IN_MS 10
 #define DELAY_BEFORE_MEASURE 10
 #define DELAY_MAIN_LOOP 10
+#define PID_SAMPLE_TIME 10
 
 #define ADC_TO_TEMP_GAIN 0.39
 #define ADC_TO_TEMP_OFFSET 23.9
@@ -41,16 +48,20 @@
 
 #define NUM_DIFFS 8 //Dividable by 8
 
-boolean off = true, stby = true, stby_layoff = true, sw_stby_old = false, sw_up_old = false, sw_down_old = false, clear_display = true, store_invalid = true, error = false, menu = false;
+volatile boolean off = true, stby = true, stby_layoff = true, sw_stby_old = false, sw_up_old = false, sw_down_old = false, clear_display = true, store_invalid = true, error = false, menu = false;
 uint16_t stored[3] = {250, 300, 350}, set_t = 150, cur_t, set_t_old, cur_t_old;
+double pid_val, cur_td, set_td;
 uint8_t pwm, store_to = 255, contrast = 50;
 uint16_t cnt_disp_refresh = TIME_DISP_REFRESH_IN_MS, cnt_sw_poll, cnt_but_press, cnt_off_press, cnt_but_store;
 float battery_voltage;
 uint16_t last_measured;
 int16_t last_diffs[NUM_DIFFS];
 uint8_t array_index, array_count;
+uint32_t sendNext;
 
 Adafruit_PCD8544 display = Adafruit_PCD8544(10, 9, -1);
+
+PID heaterPID(&cur_td, &pid_val, &set_td, kp, ki, kd, DIRECT);
 
 void setup() {
 	digitalWrite(HEATER_PWM, LOW);
@@ -70,9 +81,10 @@ void setup() {
 	}
 	
 	//PWM Prescaler = 1024
-	TCCR2B = TCCR2B & 0xFF;
-
+	TCCR2B = TCCR2B & 0b11111000 | 7;
+	delay(500);
 	display.begin();
+	delay(500);
 	display.clearDisplay();
 	if (EEPROM.read(0) != EEPROM_CHECK) {
 		EEPROM.update(0, EEPROM_CHECK);
@@ -86,14 +98,15 @@ void setup() {
 	set_t = EEPROM.read(8) << 8;
 	set_t |= EEPROM.read(9);
 	setContrast(EEPROM.read(10));
-	delay(500);
 	
 	
 	Serial.begin(115200);
-	Serial.println("DIFF SUM;SET TEMPERATURE;IS TEMPERATURE;DUTY CYCLE;VOLTAGE");
+	//Serial.println("DIFF SUM;SET TEMPERATURE;IS TEMPERATURE;DUTY CYCLE;VOLTAGE");
 	last_measured = getTemperature();
 	Timer1.initialize(1000);
 	Timer1.attachInterrupt(timer_isr);
+	heaterPID.SetMode(AUTOMATIC);
+	sendNext = millis();
 }
 
 void updateEEPROM() {
@@ -120,6 +133,7 @@ int getTemperature() {
 	uint16_t adcValue = analogRead(TEMP_SENSE); // read the input
 	if (adcValue >= 1015) { //Illegal value
 		analogWrite(HEATER_PWM, 0);
+		setOff(true);
 		return 999;
 	} else {
 		analogWrite(HEATER_PWM, pwm); //switch heater back to last value
@@ -292,11 +306,18 @@ void timer_disp_refresh() {
 			disp = true;
 		}
 		if (off) {
-			if (clr) {
-				display.fillRect(16, 0, 64, 24, WHITE);
-				display.setCursor(16,0);
-				display.setTextSize(3);
-				display.print("OFF");
+			if (clr || ((cur_t_old != cur_t) && ((cur_t_old == 999) || (cur_t == 999)))) {
+				if (cur_t == 999) {
+					display.fillRect(0,0,84,24, WHITE);
+					display.setCursor(6,4);
+					display.setTextSize(2);
+					display.print("NO TIP");
+				} else {
+					display.fillRect(0, 0, 84, 24, WHITE);
+					display.setCursor(16,0);
+					display.setTextSize(3);
+					display.print("OFF");
+				}
 				disp = true;
 			}
 		} else if (set_t_old != set_t || clr) {
@@ -324,6 +345,7 @@ void timer_disp_refresh() {
 			disp = true;
 		}
 	}
+	#ifdef HAS_BATTERY
 	if (battery_voltage > 1) {
 		display.fillRect(display.width()-11,0,10,6,BLACK);
 		display.drawRect(display.width()-10,1,8,4,WHITE);
@@ -334,6 +356,7 @@ void timer_disp_refresh() {
 			setOff(true);
 		}
 	}
+	#endif
 	if (disp)
 		display.display();
 }
@@ -353,6 +376,7 @@ void timer_isr() {
 
 void setError() {
 	error = true;
+	clear_display = true;
 	setOff(true);
 }
 
@@ -368,67 +392,56 @@ void loop() {
 	} else {
 		target = set_t;
 	}
-	int16_t diff = target-cur_t;
-	cnt_temp_rise++;
-	//check the temperature rise is high enough
+
 	int16_t delta = cur_t-last_measured;
-	if (delta <= -20) {
+	if (!off && delta <= -20 && cur_td != 999) {
 		setError();
 	}
-	if (diff >= 15) {
-		if (delta < -5 && array_count > 2) {
-			setError();
-		} else {
-			last_diffs[array_index%NUM_DIFFS] = delta;
-			array_count = min(array_count+1, NUM_DIFFS);
-			if (array_count >= NUM_DIFFS) {
-				int16_t delta_t = 0;
-				for (uint8_t i = 0; i < array_count; i++) {
-					delta_t += last_diffs[(array_index+NUM_DIFFS-i)%NUM_DIFFS];
-				}
-				if (delta_t < NUM_DIFFS/8*2) {
-					setError();
-				}
-			}
-			array_index++;
-		}
-	} else {
-		array_count = 0;
-	}
+	
+	set_td = target;
+	cur_td = cur_t;
+	int16_t diff = target-cur_t;
+	cnt_temp_rise++;
 	last_measured = cur_t;
-	/*
-	if (cnt_temp_rise >= TEMP_RISE_TIME/DELAY_MAIN_LOOP) {
-		//if risen less then 20deg then it's a sensor failure (tip not plugged in?)
-		if (diff_old-diff < TEMP_MIN_RISE) {
-			error = true;
-			stby = true;
-			clear_display = true;
-		} else {
-			diff_old = diff;
-			cnt_temp_rise = 0;
-		}
-	}
-	*/
-	if (error)
+
+	heaterPID.Compute();
+	if (error || off)
 		pwm = 0;
 	else
-		pwm = max(0, min(255, diff*CTRL_GAIN));
+		pwm = min(255,pid_val*255);
+		//pwm = max(0, min(255, diff*CTRL_GAIN));
 	//reset counter if not heating that much
 	if (pwm < min(TEMP_MIN_RISE*CTRL_GAIN, 200)) cnt_temp_rise = 0;
 	
 	analogWrite(HEATER_PWM, pwm);
-	digitalWrite(HEAT_LED, cur_t <= target && (cur_t < target-5 || (millis()/1000)%2));
+	digitalWrite(HEAT_LED, cur_t+5 < target || (abs((int16_t)cur_t-(int16_t)target) <= 5 && (millis()/(stby?1000:500))%2));
 	battery_voltage = (analogRead(BATTERY_IN)*3*5/1024.0);
-	Serial.print(delta);
-	Serial.print(";");
-	Serial.print(set_t);
-	Serial.print(";");
-	Serial.print(cur_t);
-	Serial.print(";");
-	Serial.print(pwm);
-	Serial.print(";");
-	Serial.print(battery_voltage);
-	Serial.println("V");
-	Serial.flush();
+	if (sendNext <= millis()) {
+		sendNext += 100;
+		Serial.print(stored[0]);
+		Serial.print(";");
+		Serial.print(stored[1]);
+		Serial.print(";");
+		Serial.print(stored[2]);
+		Serial.print(";");
+		Serial.print(off?1:0);
+		Serial.print(";");
+		Serial.print(stby?1:0);
+		Serial.print(";");
+		Serial.print(stby_layoff?1:0);
+		Serial.print(";");
+		Serial.print(set_t);
+		Serial.print(";");
+		Serial.print(cur_t);
+		Serial.print(";");
+		Serial.print(pid_val);
+		Serial.print(";");
+		Serial.print(battery_voltage);
+		Serial.print(";");
+		Serial.print(battery_voltage);
+		Serial.print(";");
+		Serial.println(battery_voltage);
+		Serial.flush();
+	}
 	delay(DELAY_MAIN_LOOP);
 }
