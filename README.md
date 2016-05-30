@@ -81,12 +81,15 @@ Unter umständen muss zuvor noch der [Treiber](http://www.wch.cn/download/CH341S
 Als _Board_ sollte _Arduino Nano_ mit _Prozessor_: _ATmega328_ ausgewählt werden.
 Über _Sketch_ > _Hochladen_ bzw. den Pfeil nach Rechts in der oberen Leiste kann das Programm übertragen werden.
 
-Unter umständen müssen vorher folgende Libraries noch über _Sketch_ > _Bibliothek einbinden_ > _.ZIP Bibliothek hinzufügen..._ eingebunden werden:
+Unter Umständen müssen vorher folgende Libraries noch über _Sketch_ > _Bibliothek einbinden_ > _.ZIP Bibliothek hinzufügen..._ eingebunden werden:
 
 * [TimerOne](https://github.com/PaulStoffregen/TimerOne)
 * [PID_v1](https://github.com/br3ttb/Arduino-PID-Library/)
 * [Adafruit_ST7735](https://github.com/adafruit/Adafruit-ST7735-Library)
 * [Adafruit_GFX](https://github.com/adafruit/Adafruit-GFX-Library)
+
+Dafür muss von den entsprechenden Seiten zuvor die ZIP heruntergeladen werden.
+Diese kann dann in dem Dateibrowser, der sich nach obiger Anleitung öffnet, selektiert werden.
 
 ### Changelog
 
