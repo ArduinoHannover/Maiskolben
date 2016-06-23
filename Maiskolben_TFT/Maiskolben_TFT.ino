@@ -21,6 +21,7 @@ float v_c1, v_c2, v_c3;
 uint8_t array_index, array_count;
 uint32_t sendNext;
 uint32_t last_temperature_drop;
+uint32_t last_on_state;
 boolean wasOff = true;
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, 0);
@@ -221,6 +222,7 @@ void setStandby(boolean state) {
 	stby = state;
 	last_measured = cur_t;
 	last_temperature_drop = millis();
+	last_on_state = millis()/1000;
 	EEPROM.update(1, stby);
 }
 
@@ -232,6 +234,7 @@ void setOff(boolean state) {
 		state = true; //don't switch on, if powered via USB
 		setError(USB_ONLY);
 	}
+	last_on_state = millis()/1000;
 	off = state;
 	wasOff = true;
 	last_measured = cur_t;
@@ -299,17 +302,23 @@ void display() {
 			tft.fillTriangle(149, 50, 159, 50, 154, 38, (set_t < MAX_TEMP) ? ST7735_WHITE : ST7735_GRAY);
 			tft.fillTriangle(149, 77, 159, 77, 154, 90, (set_t > MIN_TEMP) ? ST7735_WHITE : ST7735_GRAY);
 		}
-		if (!off && !stby) {
-			uint16_t tout =  min(max(0,(last_temperature_drop + STANDBY_TIMEOUT - (millis()+500)/1000)), STANDBY_TIMEOUT);
-			tft.setTextColor(ST7735_YELLOW, ST7735_BLACK);
+		if (!off) {
+			uint16_t tout;
+			if (stby) {
+				tout = min(max(0,(last_on_state + OFF_TIMEOUT - (millis()+999)/1000)), OFF_TIMEOUT);
+			} else {
+				tout = min(max(0,(last_temperature_drop + STANDBY_TIMEOUT - (millis()+999)/1000)), STANDBY_TIMEOUT);
+			}
+			tft.setTextColor(stby?ST7735_RED:ST7735_YELLOW, ST7735_BLACK);
 			tft.setTextSize(2);
-			tft.setCursor(58,78);
+			tft.setCursor(46,78);
+			if (tout < 600) tft.write('0');
 			tft.print(tout/60);
 			tft.write(':');
 			if (tout%60 < 10) tft.write('0');
 			tft.print(tout%60);
 		} else if (temperature != 999) {
-			tft.fillRect(54, 78, 60, 20, ST7735_BLACK);
+			tft.fillRect(46, 78, 60, 20, ST7735_BLACK);
 		}
 	}
 	if (cur_t_old != temperature) {
@@ -399,6 +408,9 @@ void display() {
 	if (!off && !stby && millis()/1000 > (last_temperature_drop + STANDBY_TIMEOUT)) {
 		setStandby(true);
 	}
+	if (!off && stby && millis()/1000 > (last_on_state + OFF_TIMEOUT)) {
+		setOff(true);
+	}
 	blink = !blink;
 }
 
@@ -481,7 +493,9 @@ void loop() {
 		Serial.print(";");
 		Serial.print(stored[2]);
 		Serial.print(";");
-		Serial.print(off?1:0);
+		Serial.print(off?0:1);
+		Serial.print(";");
+		Serial.print(error);
 		Serial.print(";");
 		Serial.print(stby?1:0);
 		Serial.print(";");
@@ -501,5 +515,58 @@ void loop() {
 		Serial.flush();
 		display();
 	}
+	if (Serial.available()) {
+		uint16_t t = 0;
+		switch (Serial.read()) {
+			//Set new Temperature (eg. S350 to set to 350C)
+			case 'T':
+				if (Serial.available() >= 3) {
+					t = serialReadTemp();
+					Serial.println(t);
+					if (t <= MAX_TEMP && t >= MIN_TEMP) {
+						set_t = t;
+						updateEEPROM();
+					}
+				}
+				break;
+			//Store new Preset (eg. P1200 to store 200C to Preset 1, NOT 0 indexed)
+			case 'P':
+				if (Serial.available() >= 4) {
+					uint8_t slot = Serial.read()-'1';
+					if (slot < 3) {
+						t = serialReadTemp();
+						if (t <= MAX_TEMP && t >= MIN_TEMP) {
+							stored[slot] = t;
+							updateEEPROM();
+						}
+					}
+				}
+				break;
+			//Clear errors
+			case 'C':
+				error = NO_ERROR;
+				break;
+			//Set standby
+			case 'S':
+				setStandby(Serial.read() == '1');
+				break;
+			//Set on/off
+			case 'O':
+				setOff(Serial.read() == '0');
+				break;
+		}
+	}
 	delay(DELAY_MAIN_LOOP);
+}
+
+uint16_t serialReadTemp() {
+	uint16_t t;
+	uint8_t n;
+	n = Serial.read()-'0';
+	t = min(9, max(0, n))*100;
+	n = Serial.read()-'0';
+	t += min(9, max(0, n))*10;
+	n = Serial.read()-'0';
+	t += min(9, max(0, n))*1;
+	return t;
 }
