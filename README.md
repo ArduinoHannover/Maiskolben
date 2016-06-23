@@ -23,6 +23,8 @@ Der *Maiskolben* hingegen ist eine erschwingliche Lösung für lediglich 40€, 
 * Open-Source-Software auf Basis von Arduino
 * Software-Update kann per USB eingespielt werden
 
+*Zu erwerben bei [HannIO](https://hannio.org).*
+
 ## Stromzufuhr
 
 Die Stromzufuhr wird wahlweise über die Hohlstecker-Buchse (10-18V) *ODER* die JST-XH4 (11,1V) Buchse angeschlossen.
