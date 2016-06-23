@@ -8,6 +8,7 @@
 #define MIN_TEMP	100
 
 #define STANDBY_TIMEOUT 240 // seconds without any significant temperature drop, if exceeded it will standby
+#define OFF_TIMEOUT     900 // seconds in standby before turning off
 
 #define TEMP_THRESHOLD	50 //threshold voltage, that must be exceeded in given time:
 #define TEMP_UNDER_THRESHOLD 150 //*10ms
