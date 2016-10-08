@@ -273,6 +273,7 @@ void updateEEPROM(void) {
 	}
 	EEPROM.update(8, set_t >> 8);
 	EEPROM.update(9, set_t & 0xFF);
+	EEPROM.update(EEPROM_OPTIONS, 1); //Defaults to auto power down
 }
 
 int getTemperature(void) {
@@ -580,11 +581,14 @@ void display(void) {
 			power_source_old = power_source;
 		}
 		if (power_source == POWER_CORD) {
+			tft.drawBitmap(0, 5, power_cord, 24, 9, tft.Color565(max(0, min(255, (14.5-v_c3)*112)), max(0, min(255, (v_c3-11)*112)), 0));
+			/*
 			tft.setTextSize(2);
 			tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
 			tft.setCursor(0,5);
 			tft.print(v_c3);
 			tft.print("V ");
+			*/
 		} else if (power_source == POWER_LIPO) {
 			float volt[] = {v_c1, v_c2-v_c1, v_c3-v_c2};
 			for (uint8_t i = 0; i < 3; i++) {
@@ -600,10 +604,6 @@ void display(void) {
 	}
 #ifdef SHUTOFF_ACTIVE
 	if (autopower) {
-		Serial.print(pwm);
-		Serial.print(" > ");
-		Serial.println(max(20, (cur_t-150)/50*round(25-v_c3))+5);
-		Serial.println(round(25-v_c3));
 		if (pwm > max(20, (cur_t-150)/50*round(25-v_c3))+5) {
 		//if (target_t-cur_t > 0.715*exp(0.0077*target_t)) {
 		//if (cur_t / (double)target_t < STANDBY_TEMPERATURE_DROP) {
