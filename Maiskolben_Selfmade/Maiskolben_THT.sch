@@ -14466,7 +14466,7 @@ Mating wall wart : TOL-00298 (and others)</description>
 </libraries>
 <attributes>
 <attribute name="CNAME" value="Maiskolben THT"/>
-<attribute name="CREVISION" value="1.0"/>
+<attribute name="CREVISION" value="1.1"/>
 <attribute name="DESIGNER" value="Luca Zimmermann"/>
 </attributes>
 <variantdefs>
@@ -14537,6 +14537,7 @@ Mating wall wart : TOL-00298 (and others)</description>
 <part name="GND5" library="supply" deviceset="DGND" device=""/>
 <part name="R14" library="SparkFun-Resistors" deviceset="RESISTOR" device="AXIAL-0.3" value="0R"/>
 <part name="U$1" library="rgb_matrix" deviceset="HANNIO" device="_MEDIUM"/>
+<part name="SUPPLY2" library="SparkFun-Aesthetics" deviceset="3.3V" device=""/>
 </parts>
 <sheets>
 <sheet>
@@ -14585,6 +14586,7 @@ Mating wall wart : TOL-00298 (and others)</description>
 <instance part="GND5" gate="1" x="83.82" y="134.62"/>
 <instance part="R14" gate="G$1" x="76.2" y="170.18" rot="R180"/>
 <instance part="U$1" gate="G$1" x="226.06" y="15.24"/>
+<instance part="SUPPLY2" gate="G$1" x="7.62" y="170.18"/>
 </instances>
 <busses>
 </busses>
@@ -14771,8 +14773,8 @@ Mating wall wart : TOL-00298 (and others)</description>
 </segment>
 <segment>
 <pinref part="U2" gate="G$1" pin="D13"/>
-<wire x1="12.7" y1="167.64" x2="7.62" y2="167.64" width="0.1524" layer="91"/>
-<label x="7.62" y="167.64" size="1.27" layer="95" rot="R180" xref="yes"/>
+<wire x1="12.7" y1="167.64" x2="5.08" y2="167.64" width="0.1524" layer="91"/>
+<label x="5.08" y="167.64" size="1.27" layer="95" rot="R180" xref="yes"/>
 </segment>
 </net>
 <net name="TEMP" class="0">
@@ -14873,6 +14875,12 @@ Mating wall wart : TOL-00298 (and others)</description>
 <wire x1="106.68" y1="101.6" x2="104.14" y2="101.6" width="0.1524" layer="91"/>
 <wire x1="104.14" y1="101.6" x2="104.14" y2="104.14" width="0.1524" layer="91"/>
 <junction x="104.14" y="104.14"/>
+</segment>
+<segment>
+<pinref part="U2" gate="G$1" pin="3V3"/>
+<pinref part="SUPPLY2" gate="G$1" pin="3.3V"/>
+<wire x1="12.7" y1="165.1" x2="7.62" y2="165.1" width="0.1524" layer="91"/>
+<wire x1="7.62" y1="165.1" x2="7.62" y2="170.18" width="0.1524" layer="91"/>
 </segment>
 </net>
 <net name="TFT_RESET" class="0">
