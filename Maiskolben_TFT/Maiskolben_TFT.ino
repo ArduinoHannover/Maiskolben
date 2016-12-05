@@ -8,13 +8,24 @@
 
 /*
  * If red is blue and blue is red change this (2.0 and above have new display types)
- * If not sure, leave commented
+ * If not sure, leave commented, you will be shown a setup screen
  */
 //#define HARDWARE_DEFINED_TFT 2
+/*
+ * Based on your Hardware-Revision there may be modifications to the PCB. 
+ * In V3 and up is a second voltage measurement circuit.
+ * For THT this should be set to anything < 3
+ * Normally leave this commented as it is stored in EEPROM
+ */
+//#define HARDWARE_REVISON     3
+//#ifndef PIN_A7
+//#define HARDWARE_REVISON	 1
+//#endif
 /*
  * Only used for testing, do not use.
  */
 //#define INSTALL
+//#define TEST_ADC
 
 volatile boolean off = true, stby = true, stby_layoff = true, sw_stby_old = false, sw_up_old = false, sw_down_old = false, clear_display = true, store_invalid = true, menu = false;
 volatile uint8_t pwm, threshold_counter;
@@ -27,13 +38,14 @@ uint8_t store_to = 255;
 p_source power_source, power_source_old = NO_INIT;
 boolean blink;
 uint16_t cnt_measure_voltage, cnt_compute, cnt_sw_poll, cnt_but_press, cnt_off_press, cnt_but_store;
-float v_c1, v_c2, v_c3;
+float v_c1, v_c2, v_c3, v_in, v;
 uint8_t array_index, array_count;
 uint32_t sendNext;
 uint32_t last_temperature_drop;
 uint32_t last_on_state;
 boolean wasOff = true, old_stby = false;
 boolean autopower = true, bootheat = false;
+uint8_t revision = 1;
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, 0);
 #define ST7735_GRAY 0x94B2
@@ -52,6 +64,8 @@ void setup(void) {
 	pinMode(SW_DOWN, INPUT_PULLUP);
 	pinMode(STBY_NO, INPUT_PULLUP);
 	pinMode(SW_STBY, INPUT_PULLUP);
+	pinMode(TFT_CS, OUTPUT);
+	digitalWrite(TFT_CS, HIGH);
 	Serial.begin(115200);
 	
 	boolean force_menu = false;
@@ -60,6 +74,7 @@ void setup(void) {
 		updateEEPROM();
 		force_menu = true;
 	}
+	//delay(1000);
 #ifdef HARDWARE_DEFINED_TFT
 #if HARDWARE_DEFINED_TFT == 1
 	tft.initR(INITR_BLACKTAB);
@@ -67,7 +82,6 @@ void setup(void) {
 #else
 	tft.initR(INITR_GREENTAB);
 	EEPROM.update(EEPROM_DISPLAY, INITR_GREENTAB);
-	delay(1000);
 #endif
 #else
 	if (force_menu || EEPROM.read(EEPROM_VERSION) < 23 || EEPROM.read(EEPROM_VERSION) == 255 || (EEPROM.read(EEPROM_DISPLAY) != INITR_GREENTAB && EEPROM.read(EEPROM_DISPLAY) != INITR_BLACKTAB)) {
@@ -123,6 +137,7 @@ void setup(void) {
 		}
 		while (digitalRead(SW_STBY)) {
 			int t = getTemperature();
+			Serial.println(t);
 			digitalWrite(HEATER_PWM, !digitalRead(SW_T1) | !digitalRead(SW_T2) | !digitalRead(SW_T3) | !digitalRead(SW_UP) | !digitalRead(SW_DOWN));
 			tft.setCursor(0,18);
 			tft.print(t);
@@ -164,14 +179,25 @@ void setup(void) {
 		}
 		detachInterrupt(digitalPinToInterrupt(SW_STBY));
 	}
+	revision = EEPROM.read(EEPROM_REVISION);
 	/*
 	 * lower frequency = noisier tip
 	 * higher frequency = needs higher pwm
 	 */
-	//PWM Prescaler = 1024
-	//TCCR2B = TCCR2B & (0b11111000 | 7);
-	//PWM Prescaler = 128
-	TCCR2B = TCCR2B & (0b11111000 | 5);
+	//PWM Prescaler = 1024 31Hz
+	//TCCR2B = (TCCR2B & 0b11111000) | 7;
+	//PWM Prescaler = 256 122Hz
+	//TCCR2B = (TCCR2B & 0b11111000) | 6;
+	//PWM Prescaler = 128 245Hz
+	TCCR2B = (TCCR2B & 0b11111000) | 5;
+	//PWM Prescaler = 64  490Hz
+	//TCCR2B = (TCCR2B & 0b11111000) | 4
+	//PWM Prescaler = 32  980Hz
+	//TCCR2B = (TCCR2B & 0b11111000) | 3;
+	//PWM Prescaler = 8  3.9kHz
+	//TCCR2B = (TCCR2B & 0b11111000) | 2
+	//PWM Prescaler = 1    31kHz - no Noise
+	//TCCR2B = (TCCR2B & 0b11111000) | 1;
 	stby = EEPROM.read(1);
 	for (uint8_t i = 0; i < 3; i++) {
 		stored[i] = EEPROM.read(2+i*2) << 8;
@@ -262,6 +288,13 @@ void optionMenu(void) {
 		if (!digitalRead(SW_T3)) break;
 	}
 	EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
+#if HARDWARE_REVISION >= 3
+	EEPROM.update(EEPROM_REVISION, HARDWARE_REVISION);
+#else
+	if (EEPROM.read(EEPROM_VERSION) < 25 || EEPROM.read(EEPROM_VERSION) > 100) {
+		EEPROM.update(EEPROM_REVISION, 2);
+	}
+#endif
 	EEPROM.update(EEPROM_VERSION, EE_VERSION);
 }
 
@@ -279,6 +312,9 @@ void updateEEPROM(void) {
 int getTemperature(void) {
 	analogRead(TEMP_SENSE);//Switch ADC MUX
 	uint16_t adc = median(TEMP_SENSE);
+#ifdef TEST_ADC
+	Serial.println(adc);
+#endif
 	if (adc >= 1020) { //Illegal value, tip not plugged in
 		analogWrite(HEATER_PWM, 0);
 		if (!off)
@@ -287,17 +323,28 @@ int getTemperature(void) {
 	} else {
 		analogWrite(HEATER_PWM, pwm); //switch heater back to last value
 	}
-	return round(adc < 210 ? (((float)adc) * 0.530805 + 38.9298) : (((float)adc) * 0.415375 + 64.6123));
-	//return round(((float) adc)*ADC_TO_TEMP_GAIN+ADC_TO_TEMP_OFFSET); //old conversion
+	return round(adc*0.574503+43.5); //nasty resistors...
+	//return round(adc < 210 ? (((float)adc) * 0.530805 + 38.9298) : (((float)adc) * 0.415375 + 64.6123)); //old conversion
+	//return round(((float) adc)*ADC_TO_TEMP_GAIN+ADC_TO_TEMP_OFFSET); //even older conversion
 }
 
 void measureVoltage(void) {
 	analogRead(BAT_C1); //Switch analog MUX before measuring
-	v_c1 = v_c1*.9+(analogRead(BAT_C1)*5/1024.0)*.1;
+	v_c1 = v_c1*.9+(analogRead(BAT_C1)*5/1024.0)*.1; //no divisor
 	analogRead(BAT_C2);
-	v_c2 = v_c2*.9+(analogRead(BAT_C2)*5/512.0)*.1;
+	v_c2 = v_c2*.9+(analogRead(BAT_C2)*5/512.0)*.1; //divisor 1:1 -> /2
 	analogRead(BAT_C3);
-	v_c3 = v_c3*.9+(analogRead(BAT_C3)*(5.0*1510.0)/(510.0*1024.0))*.1; //maximum measurable is 14.79V
+	v_c3 = v_c3*.9+(analogRead(BAT_C3)*(5.0*3.0)/1024.0)*.1; //maximum measurable is ~15V
+	v = v_c3;
+	if (revision < 3) return;
+#ifdef VIN
+	analogRead(VIN);
+	v_in = v_in*.9+(analogRead(VIN)*25/1024.0)*.1; //maximum measurable is ~24.5V
+	Serial.println(v_in);
+	if (v_in > 1.0) {
+		v = v_in; //backwards compatibility
+	}
+#endif
 }
 
 uint16_t median(uint8_t analogIn) {
@@ -552,7 +599,15 @@ void display(void) {
 		cur_t_old = temperature;
 	}
 	if (v_c3 > 1.0) {
-		if (v_c3 < 5.0) {
+		tft.setTextColor(ST7735_YELLOW, ST7735_BLACK);
+		tft.setCursor(122,5);
+		tft.setTextSize(2);
+		int power = min(15,v)*min(15,v)/4.8*pwm/255;
+		if (power < 10) tft.write(' ');
+		tft.print(power);
+		tft.write('W');
+		
+		if (v < 5.0) {
 			power_source = POWER_USB;
 		} else if (v_c2 < 1.0) {
 			power_source = POWER_CORD;
@@ -581,14 +636,15 @@ void display(void) {
 			power_source_old = power_source;
 		}
 		if (power_source == POWER_CORD) {
-			tft.drawBitmap(0, 5, power_cord, 24, 9, tft.Color565(max(0, min(255, (14.5-v_c3)*112)), max(0, min(255, (v_c3-11)*112)), 0));
-			/*
-			tft.setTextSize(2);
-			tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
-			tft.setCursor(0,5);
-			tft.print(v_c3);
-			tft.print("V ");
-			*/
+			if (v > v_c3) {
+				tft.setTextSize(2);
+				tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
+				tft.setCursor(0,5);
+				tft.print(v);
+				tft.print("V ");
+			} else {
+				tft.drawBitmap(0, 5, power_cord, 24, 9, tft.Color565(max(0, min(255, (14.5-v)*112)), max(0, min(255, (v-11)*112)), 0));
+			}
 		} else if (power_source == POWER_LIPO) {
 			float volt[] = {v_c1, v_c2-v_c1, v_c3-v_c2};
 			for (uint8_t i = 0; i < 3; i++) {
@@ -604,7 +660,7 @@ void display(void) {
 	}
 #ifdef SHUTOFF_ACTIVE
 	if (autopower) {
-		if (pwm > max(20, (cur_t-150)/50*round(25-v_c3))+5) {
+		if (pwm > max(20, (cur_t-150)/50*round(25-min(15,v)))+5) {
 		//if (target_t-cur_t > 0.715*exp(0.0077*target_t)) {
 		//if (cur_t / (double)target_t < STANDBY_TEMPERATURE_DROP) {
 			if (stby && !wasOff) {
@@ -699,6 +755,7 @@ void loop(void) {
 	
 	if (sendNext <= millis()) {
 		sendNext += 100;
+#ifndef TEST_ADC
 		Serial.print(stored[0]);
 		Serial.print(";");
 		Serial.print(stored[1]);
@@ -723,7 +780,8 @@ void loop(void) {
 		Serial.print(";");
 		Serial.print(v_c2);
 		Serial.print(";");
-		Serial.println(v_c3);
+		Serial.println(v);
+#endif
 		Serial.flush();
 		display();
 	}
@@ -734,7 +792,7 @@ void loop(void) {
 			case 'T':
 				if (Serial.available() >= 3) {
 					t = serialReadTemp();
-					Serial.println(t);
+					//Serial.println(t);
 					if (t <= MAX_TEMP && t >= MIN_TEMP) {
 						set_t = t;
 						updateEEPROM();

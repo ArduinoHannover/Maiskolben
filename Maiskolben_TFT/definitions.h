@@ -1,5 +1,5 @@
-#define VERSION			"2.4"
-#define EE_VERSION      24
+#define VERSION			"2.5"
+#define EE_VERSION      25
 #define EEPROM_CHECK	42
 
 #define STBY_TEMP	150
@@ -26,6 +26,10 @@
 //Time in that the temperature must rise by the set temperature
 #define TEMP_RISE_TIME 1000
 
+//#define OLD_PWM
+
+//      RX			0
+//      TX			1
 #define SW_STBY		2
 #define HEATER_PWM	3
 #define SW_DOWN		4
@@ -35,13 +39,18 @@
 #define SW_T2		8
 #define SW_T1		9
 #define TFT_CS		10
+//      MOSI		11
 #define TFT_BL      12 //use MISO PULLUP as switch
+//      SCK			13
 #define TEMP_SENSE	A0
 #define STBY_NO		A1
 #define BAT_C3		A2
 #define BAT_C2		A3
 #define BAT_C1		A4
 #define TFT_DC		A5
+#ifdef PIN_A7
+#define VIN			A7
+#endif
 
 #define kp			0.03
 #define ki			0.00001
@@ -62,6 +71,7 @@
 #define EEPROM_VERSION  10
 #define EEPROM_DISPLAY  11
 #define EEPROM_OPTIONS  12
+#define EEPROM_REVISION 13
 #define EEPROM_INSTALL  42
 
 
