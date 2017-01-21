@@ -11,6 +11,7 @@
 "2";"100nF";"CAP-PTH-SMALLEZ";"C1, C7";"Capacitor";"";
 "1";"2N7000";"TO-92";"Q2";"Common NMOSFET Parts";"";
 "1";"IRF5305";"TO220V";"Q1";"Generic PMOSFET";"";
+"1";"LM7805TV";"TO220V";"IC2";"Or short SJ1 (12V max)";"";
 "1";"CD4050BE";"DIP16";"U1";"";"";
 "1";"OPA703PA";"DIL08";"IC1";"Rail-to-Rail Operational Amplifiers";"";
 "1";"RED";"LED5MM";"HEATING";"LED";"";
