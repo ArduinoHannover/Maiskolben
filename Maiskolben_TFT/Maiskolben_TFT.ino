@@ -17,9 +17,9 @@
  * For THT this should be set to anything < 3
  * Normally leave this commented as it is stored in EEPROM
  */
-//#define HARDWARE_REVISON     3
+//#define HARDWARE_REVISION     3
 //#ifndef PIN_A7
-//#define HARDWARE_REVISON	 1
+//#define HARDWARE_REVISION	 1
 //#endif
 /*
  * Only used for testing, do not use.
@@ -46,6 +46,8 @@ uint32_t last_on_state;
 boolean wasOff = true, old_stby = false;
 boolean autopower = true, bootheat = false;
 uint8_t revision = 1;
+boolean menu_dismissed = false;
+boolean autopower_repeat_under = false;
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, 0);
 #define ST7735_GRAY 0x94B2
@@ -162,6 +164,7 @@ void setup(void) {
 	bootheat = (options >> 1) & 1;
 	if (force_menu) optionMenu();
 	else {
+		updateRevision();
 		tft.drawBitmap(0, 20, maiskolben, 160, 64, ST7735_YELLOW);
 		tft.setCursor(20,86);
 		tft.setTextColor(ST7735_YELLOW);
@@ -171,15 +174,17 @@ void setup(void) {
 		tft.setTextSize(1);
 		tft.print("Version ");
 		tft.print(VERSION);
+		tft.setCursor(46,120);
+		tft.print("HW Revision ");
+		tft.print(revision);
 		//Allow Options to be set at startup
 		attachInterrupt(digitalPinToInterrupt(SW_STBY), optionMenu, LOW);
-		for (int i = 1; i < 11; i++) {
+		for (int i = 1; i < 11 && !menu_dismissed; i++) {
 			digitalWrite(HEAT_LED, i % 2);
 			delay(250);
 		}
 		detachInterrupt(digitalPinToInterrupt(SW_STBY));
 	}
-	revision = EEPROM.read(EEPROM_REVISION);
 	/*
 	 * lower frequency = noisier tip
 	 * higher frequency = needs higher pwm
@@ -219,6 +224,20 @@ void setup(void) {
 		threshold_counter = TEMP_UNDER_THRESHOLD;
 		setOff(false);
 	}
+}
+
+void updateRevision(void) {	
+#if (HARDWARE_REVISION > 2)
+	EEPROM.update(EEPROM_REVISION, HARDWARE_REVISION);
+	revision = 3;
+#else
+	if (EEPROM.read(EEPROM_VERSION) < 26 || EEPROM.read(EEPROM_REVISION) > 100) {
+		EEPROM.update(EEPROM_REVISION, 2);
+		revision = 2;
+	} else {
+		revision = EEPROM.read(EEPROM_REVISION);
+	}
+#endif
 }
 
 void optionMenu(void) {
@@ -288,14 +307,9 @@ void optionMenu(void) {
 		if (!digitalRead(SW_T3)) break;
 	}
 	EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
-#if HARDWARE_REVISION >= 3
-	EEPROM.update(EEPROM_REVISION, HARDWARE_REVISION);
-#else
-	if (EEPROM.read(EEPROM_VERSION) < 25 || EEPROM.read(EEPROM_VERSION) > 100) {
-		EEPROM.update(EEPROM_REVISION, 2);
-	}
-#endif
+	updateRevision();
 	EEPROM.update(EEPROM_VERSION, EE_VERSION);
+	menu_dismissed = true;
 }
 
 void updateEEPROM(void) {
@@ -340,10 +354,7 @@ void measureVoltage(void) {
 #ifdef VIN
 	analogRead(VIN);
 	v_in = v_in*.9+(analogRead(VIN)*25/1024.0)*.1; //maximum measurable is ~24.5V
-	Serial.println(v_in);
-	if (v_in > 1.0) {
-		v = v_in; //backwards compatibility
-	}
+	v = v_in; //backwards compatibility
 #endif
 }
 
@@ -372,7 +383,6 @@ uint16_t median(uint8_t analogIn) {
 }
 
 void timer_sw_poll(void) {
-	stby_layoff = !digitalRead(STBY_NO);
 	if (!digitalRead(SW_STBY)) {
 		if (cnt_off_press == 100) {
 			setOff(!off);
@@ -449,12 +459,20 @@ void timer_sw_poll(void) {
 }
 
 void setStandby(boolean state) {
+	if (stby_layoff) return;
 	if (state == stby) return;
 	stby = state;
 	last_measured = cur_t;
 	last_temperature_drop = millis();
 	last_on_state = millis()/1000;
 	EEPROM.update(1, stby);
+}
+void setStandbyLayoff(boolean state) {
+	if (state == stby_layoff) return;
+	stby_layoff = state;
+	stby = false;
+	last_measured = cur_t;
+	last_on_state = millis()/1000;
 }
 
 void setOff(boolean state) {
@@ -548,7 +566,7 @@ void display(void) {
 #ifdef SHUTOFF_ACTIVE
 			if (autopower) {
 				int16_t tout;
-				if (stby) {
+				if (stby || stby_layoff) {
 					tout = min(max(0,(last_on_state + OFF_TIMEOUT - (millis())/1000)), OFF_TIMEOUT);
 				} else {
 					tout = min(max(0,(last_temperature_drop + STANDBY_TIMEOUT - (millis())/1000)), STANDBY_TIMEOUT);
@@ -581,7 +599,7 @@ void display(void) {
 				tft.fillRect(44,76,72,16,ST7735_BLACK);
 			}
 			tft.setTextColor(off ? temperature < 50 ? ST7735_CYAN : ST7735_RED : tft.Color565(min(10,abs(temperature-target_t))*25, 250 - min(10,max(0,(abs(temperature-target_t)-10)))*25, 0), ST7735_BLACK);
-			if (temperature < 50) {
+			if (temperature < 60) {
 				tft.print("COLD");
 			} else {
 				tft.write(' ');
@@ -636,15 +654,15 @@ void display(void) {
 			power_source_old = power_source;
 		}
 		if (power_source == POWER_CORD) {
-			if (v > v_c3) {
+			/*if (v > v_c3) {
 				tft.setTextSize(2);
 				tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
 				tft.setCursor(0,5);
 				tft.print(v);
 				tft.print("V ");
-			} else {
+			} else {*/
 				tft.drawBitmap(0, 5, power_cord, 24, 9, tft.Color565(max(0, min(255, (14.5-v)*112)), max(0, min(255, (v-11)*112)), 0));
-			}
+			//}
 		} else if (power_source == POWER_LIPO) {
 			float volt[] = {v_c1, v_c2-v_c1, v_c3-v_c2};
 			for (uint8_t i = 0; i < 3; i++) {
@@ -660,21 +678,28 @@ void display(void) {
 	}
 #ifdef SHUTOFF_ACTIVE
 	if (autopower) {
-		if (pwm > max(20, (cur_t-150)/50*round(25-min(15,v)))+5) {
-		//if (target_t-cur_t > 0.715*exp(0.0077*target_t)) {
-		//if (cur_t / (double)target_t < STANDBY_TEMPERATURE_DROP) {
-			if (stby && !wasOff) {
-				setStandby(false);
+		if (!stby_layoff) {
+			if (pwm > max(20, (cur_t-150)/50*round(25-min(15,v)))+5) {
+			//if (target_t-cur_t > 0.715*exp(0.0077*target_t)) {
+			//if (cur_t / (double)target_t < STANDBY_TEMPERATURE_DROP) {
+				if (autopower_repeat_under || stby) {
+					if (stby && !wasOff) {
+						setStandby(false);
+					} else {
+						last_temperature_drop = millis()/1000;
+					}
+				}
+				autopower_repeat_under = true;
+			} else if (wasOff) {
+				wasOff = false;
 			} else {
-				last_temperature_drop = millis()/1000;
+				autopower_repeat_under = false; //over the max pwm for at least two times
 			}
-		} else if (wasOff) {
-			wasOff = false;
 		}
 		if (!off && !stby && millis()/1000 > (last_temperature_drop + STANDBY_TIMEOUT)) {
 			setStandby(true);
 		}
-		if (!off && stby && millis()/1000 > (last_on_state + OFF_TIMEOUT)) {
+		if (!off && (stby || stby_layoff) && millis()/1000 > (last_on_state + OFF_TIMEOUT)) {
 			setOff(true);
 		}
 	}
@@ -683,6 +708,7 @@ void display(void) {
 }
 
 void compute(void) {
+	setStandbyLayoff(!digitalRead(STBY_NO)); //do not measure while heater is active, potential is not neccessary == GND
 	cur_t = getTemperature();
 	if (off) {
 		target_t = 0;
@@ -722,11 +748,13 @@ void compute(void) {
 }
 
 void timer_isr(void) {
-	if (cnt_compute >= TIME_COMPUTE_IN_MS+DELAY_BEFORE_MEASURE) {
-		compute();
-		cnt_compute=0;
-	} else if(cnt_compute >= TIME_COMPUTE_IN_MS) {
+	if (cnt_compute >= TIME_COMPUTE_IN_MS) {
 		analogWrite(HEATER_PWM, 0); //switch off heater to let the low pass settle
+		
+		if (cnt_compute >= TIME_COMPUTE_IN_MS+DELAY_BEFORE_MEASURE) {
+			compute();
+			cnt_compute=0;
+		}
 	}
 	cnt_compute++;
 	

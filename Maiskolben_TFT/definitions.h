@@ -1,5 +1,5 @@
-#define VERSION			"2.5"
-#define EE_VERSION      25
+#define VERSION			"2.6"
+#define EE_VERSION      26
 #define EEPROM_CHECK	42
 
 #define STBY_TEMP	150
