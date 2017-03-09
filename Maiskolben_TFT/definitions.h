@@ -1,10 +1,9 @@
-#define VERSION			"2.6"
-#define EE_VERSION      26
+#define VERSION			"2.7"
+#define EE_VERSION      27
 #define EEPROM_CHECK	42
 
 #define STBY_TEMP	150
 /*
- * SOFTWARE CAN'T MEASURE MORE THAN 489 DUE TO RESISTOR CONFIGURATION, IF SET TO >= 489 IT'S LIKELY TO KILL YOUR TIP!
  * TIPS ARE SPECIFIED FOR 450 DEGREE MAX
  * If read 1023 on Analog in, the tip is turned off
  */

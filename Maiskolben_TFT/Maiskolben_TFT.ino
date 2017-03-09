@@ -7,6 +7,13 @@
 #include "definitions.h"
 
 /*
+ * If your display stays white, uncomment this.
+ * Cut reset trace (on THT on upper layer/0R), connect STBY_NO (A1) with reset of TFT (at 4050).
+ * See also readme in mechanical folder for reference.
+ */
+//#define USE_TFT_RESET
+
+/*
  * If red is blue and blue is red change this (2.0 and above have new display types)
  * If not sure, leave commented, you will be shown a setup screen
  */
@@ -27,7 +34,7 @@
 //#define INSTALL
 //#define TEST_ADC
 
-volatile boolean off = true, stby = true, stby_layoff = true, sw_stby_old = false, sw_up_old = false, sw_down_old = false, clear_display = true, store_invalid = true, menu = false;
+volatile boolean off = true, stby = true, stby_layoff = false, sw_stby_old = false, sw_up_old = false, sw_down_old = false, clear_display = true, store_invalid = true, menu = false;
 volatile uint8_t pwm, threshold_counter;
 volatile int16_t cur_t, last_measured;
 volatile error_type error = NO_ERROR;
@@ -49,7 +56,11 @@ uint8_t revision = 1;
 boolean menu_dismissed = false;
 boolean autopower_repeat_under = false;
 
+#ifdef USE_TFT_RESET
+Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, STBY_NO);
+#else
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, 0);
+#endif
 #define ST7735_GRAY 0x94B2
 
 PID heaterPID(&cur_td, &pid_val, &set_td, kp, ki, kd, DIRECT);
@@ -329,7 +340,7 @@ int getTemperature(void) {
 #ifdef TEST_ADC
 	Serial.println(adc);
 #endif
-	if (adc >= 1020) { //Illegal value, tip not plugged in
+	if (adc >= 900) { //Illegal value, tip not plugged in - would be around 560deg
 		analogWrite(HEATER_PWM, 0);
 		if (!off)
 			setError(NO_TIP);
@@ -708,7 +719,9 @@ void display(void) {
 }
 
 void compute(void) {
+#ifndef USE_TFT_RESET
 	setStandbyLayoff(!digitalRead(STBY_NO)); //do not measure while heater is active, potential is not neccessary == GND
+#endif
 	cur_t = getTemperature();
 	if (off) {
 		target_t = 0;
