@@ -331,7 +331,7 @@ void updateEEPROM(void) {
 	}
 	EEPROM.update(8, set_t >> 8);
 	EEPROM.update(9, set_t & 0xFF);
-	EEPROM.update(EEPROM_OPTIONS, 1); //Defaults to auto power down
+	EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
 }
 
 int getTemperature(void) {
@@ -348,9 +348,8 @@ int getTemperature(void) {
 	} else {
 		analogWrite(HEATER_PWM, pwm); //switch heater back to last value
 	}
-	return round(adc*0.574503+43.5); //nasty resistors...
 	//return round(adc < 210 ? (((float)adc) * 0.530805 + 38.9298) : (((float)adc) * 0.415375 + 64.6123)); //old conversion
-	//return round(((float) adc)*ADC_TO_TEMP_GAIN+ADC_TO_TEMP_OFFSET); //even older conversion
+	return round(((float) adc) * ADC_TO_TEMP_GAIN + ADC_TO_TEMP_OFFSET);
 }
 
 void measureVoltage(void) {
@@ -461,8 +460,8 @@ void timer_sw_poll(void) {
 		cnt_but_press++;
 		if((cnt_but_press >= 100) || sw_changed) {
 			setStandby(false);
-			if(sw_up && set_t < MAX_TEMP) set_t++;
-			else if (sw_down && set_t > MIN_TEMP) set_t--;
+			if(sw_up && set_t < TEMP_MAX) set_t++;
+			else if (sw_down && set_t > TEMP_MIN) set_t--;
 			if(!sw_changed) cnt_but_press = 97;
 			updateEEPROM();
 		}
@@ -569,8 +568,8 @@ void display(void) {
 				tft.setTextColor(ST7735_WHITE, ST7735_BLACK);
 				tft.write(' ');
 				tft.print(set_t);
-				tft.fillTriangle(149, 50, 159, 50, 154, 38, (set_t < MAX_TEMP) ? ST7735_WHITE : ST7735_GRAY);
-				tft.fillTriangle(149, 77, 159, 77, 154, 90, (set_t > MIN_TEMP) ? ST7735_WHITE : ST7735_GRAY);
+				tft.fillTriangle(149, 50, 159, 50, 154, 38, (set_t < TEMP_MAX) ? ST7735_WHITE : ST7735_GRAY);
+				tft.fillTriangle(149, 77, 159, 77, 154, 90, (set_t > TEMP_MIN) ? ST7735_WHITE : ST7735_GRAY);
 			}
 		}
 		if (!off) {
@@ -609,8 +608,8 @@ void display(void) {
 			if (cur_t_old == 999) {
 				tft.fillRect(44,76,72,16,ST7735_BLACK);
 			}
-			tft.setTextColor(off ? temperature < 50 ? ST7735_CYAN : ST7735_RED : tft.Color565(min(10,abs(temperature-target_t))*25, 250 - min(10,max(0,(abs(temperature-target_t)-10)))*25, 0), ST7735_BLACK);
-			if (temperature < 60) {
+			tft.setTextColor(off ? temperature < TEMP_COLD ? ST7735_CYAN : ST7735_RED : tft.Color565(min(10,abs(temperature-target_t))*25, 250 - min(10,max(0,(abs(temperature-target_t)-10)))*25, 0), ST7735_BLACK);
+			if (temperature < TEMP_COLD) {
 				tft.print("COLD");
 			} else {
 				tft.write(' ');
@@ -619,10 +618,10 @@ void display(void) {
 			}
 		}
 		if (temperature < cur_t_old)
-			tft.drawFastHLine((int)(temperature/2.6), 0, 160-(int)(temperature/2.6), ST7735_BLACK);
+			tft.fillRect(max(0, (temperature - TEMP_COLD)/2.4), 0, 160-max(0, (temperature - TEMP_COLD)/2.4), BAR_HEIGHT, ST7735_BLACK);
 		else if (cur_t != 999) {
-			for (int16_t i = 0; i < temperature/2.6; i++) {
-				tft.drawPixel(i, 0, tft.Color565(min(255, max(0, i*5)), min(255, max(0, 400-i*2.5)), 0));
+			for (int16_t i = max(0, (cur_t_old - TEMP_COLD)/2.4); i < max(0, (temperature - TEMP_COLD)/2.4); i++) {
+				tft.drawFastVLine(i, 0, BAR_HEIGHT, tft.Color565(min(255, max(0, i*5)), min(255, max(0, 450-i*2.5)), 0));
 			}
 		}
 		cur_t_old = temperature;
@@ -730,7 +729,7 @@ void compute(void) {
 		}
 	} else {
 		if (stby_layoff || stby) {
-			target_t = STBY_TEMP;
+			target_t = TEMP_STBY;
 		} else {
 			target_t = set_t;
 		}
@@ -834,7 +833,7 @@ void loop(void) {
 				if (Serial.available() >= 3) {
 					t = serialReadTemp();
 					//Serial.println(t);
-					if (t <= MAX_TEMP && t >= MIN_TEMP) {
+					if (t <= TEMP_MAX && t >= TEMP_MIN) {
 						set_t = t;
 						updateEEPROM();
 					}
@@ -846,7 +845,7 @@ void loop(void) {
 					uint8_t slot = Serial.read()-'1';
 					if (slot < 3) {
 						t = serialReadTemp();
-						if (t <= MAX_TEMP && t >= MIN_TEMP) {
+						if (t <= TEMP_MAX && t >= TEMP_MIN) {
 							stored[slot] = t;
 							updateEEPROM();
 						}
