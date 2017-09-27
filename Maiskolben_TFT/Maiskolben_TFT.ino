@@ -1,6 +1,5 @@
 #include <SPI.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7735.h>
+#include <TFT_ILI9163C.h>
 #include <PID_v1.h>
 #include <EEPROM.h>
 #include "TimerOne.h"
@@ -14,20 +13,24 @@
 //#define USE_TFT_RESET
 
 /*
- * If red is blue and blue is red change this (2.0 and above have new display types)
+ * If red is blue and blue is red change this
  * If not sure, leave commented, you will be shown a setup screen
  */
 //#define HARDWARE_DEFINED_TFT 2
 /*
  * Based on your Hardware-Revision there may be modifications to the PCB. 
  * In V3 and up is a second voltage measurement circuit.
+ * HW REVS:
+ * 1.5 - 2.8:
  * For THT this should be set to anything < 3
  * Normally leave this commented as it is stored in EEPROM
  */
+
+// V 1.5 - 2.11, Maiskolben THT
+//#define HARDWARE_REVISION     2
+// V 3.0 and 3.1
 //#define HARDWARE_REVISION     3
-//#ifndef PIN_A7
-//#define HARDWARE_REVISION	 1
-//#endif
+
 /*
  * Only used for testing, do not use.
  */
@@ -39,7 +42,7 @@ volatile uint8_t pwm, threshold_counter;
 volatile int16_t cur_t, last_measured;
 volatile error_type error = NO_ERROR;
 error_type error_old;
-int16_t stored[3] = {250, 300, 350}, set_t = 150, set_t_old, cur_t_old, target_t;
+int16_t stored[3] = {300, 350, 450}, set_t = TEMP_MIN, set_t_old, cur_t_old, target_t;
 double pid_val, cur_td, set_td;
 uint8_t store_to = 255;
 p_source power_source, power_source_old = NO_INIT;
@@ -55,20 +58,38 @@ boolean autopower = true, bootheat = false;
 uint8_t revision = 1;
 boolean menu_dismissed = false;
 boolean autopower_repeat_under = false;
+boolean force_redraw = false;
+boolean power_down = false;
+uint16_t charge = 0;
+float adc_offset = ADC_TO_TEMP_OFFSET;
+float adc_gain = ADC_TO_TEMP_GAIN;
+
+#define RGB_DISP 0x0
+#define BGR_DISP 0x2
 
 #ifdef USE_TFT_RESET
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, STBY_NO);
+TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS,  TFT_DC, STBY_NO);
 #else
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, 0);
+TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS,  TFT_DC);
 #endif
-#define ST7735_GRAY 0x94B2
+#define	BLACK   0x0000
+#define	BLUE    0x001F
+#define	RED     0xF800
+#define	GREEN   0x07E0
+#define CYAN    0x07FF
+#define MAGENTA 0xF81F
+#define YELLOW  0xFFE0  
+#define WHITE   0xFFFF
+#define GRAY    0x94B2
 
 PID heaterPID(&cur_td, &pid_val, &set_td, kp, ki, kd, DIRECT);
 
 void setup(void) {
 	digitalWrite(HEATER_PWM, LOW);
 	pinMode(HEATER_PWM, OUTPUT);
+	pinMode(POWER, INPUT_PULLUP);
 	pinMode(HEAT_LED, OUTPUT);
+	digitalWrite(HEAT_LED, HIGH);
 	pinMode(TEMP_SENSE, INPUT);
 	pinMode(SW_T1, INPUT_PULLUP);
 	pinMode(SW_T2, INPUT_PULLUP);
@@ -87,44 +108,43 @@ void setup(void) {
 		updateEEPROM();
 		force_menu = true;
 	}
-	//delay(1000);
+	tft.begin();
 #ifdef HARDWARE_DEFINED_TFT
-#if HARDWARE_DEFINED_TFT == 1
-	tft.initR(INITR_BLACKTAB);
-	EEPROM.update(EEPROM_DISPLAY, INITR_BLACKTAB);
+	#if HARDWARE_DEFINED_TFT == 1
+		EEPROM.update(EEPROM_DISPLAY, RGB_DISP);
+		setDisplayMode(0);
+	#else
+		EEPROM.update(EEPROM_DISPLAY, BGR_DISP);
+		setDisplayMode(1);
+	#endif
 #else
-	tft.initR(INITR_GREENTAB);
-	EEPROM.update(EEPROM_DISPLAY, INITR_GREENTAB);
-#endif
-#else
-	if (force_menu || EEPROM.read(EEPROM_VERSION) < 23 || EEPROM.read(EEPROM_VERSION) == 255 || (EEPROM.read(EEPROM_DISPLAY) != INITR_GREENTAB && EEPROM.read(EEPROM_DISPLAY) != INITR_BLACKTAB)) {
-		tft.initR(INITR_GREENTAB);
-		tft.setRotation(1);
-		tft.fillScreen(ST7735_BLACK);
+	if (force_menu || EEPROM.read(EEPROM_VERSION) < 23 || EEPROM.read(EEPROM_VERSION) == 255 || (EEPROM.read(EEPROM_DISPLAY) != BGR_DISP && EEPROM.read(EEPROM_DISPLAY) != RGB_DISP)) {
+		tft.fillScreen(BLACK);
+		setDisplayMode(1);
 		tft.setTextSize(2);
 		tft.setCursor(0,0);
-		tft.setTextColor(ST7735_WHITE);
+		tft.setTextColor(WHITE);
 		tft.print(F("What color is displayed?"));
 		tft.setCursor(10,112);
-		tft.setTextColor(ST7735_RED);
+		tft.setTextColor(RED);
 		tft.print("RED     BLUE");
 		while (true) {
 			if (!digitalRead(SW_T1)) {
-				EEPROM.update(EEPROM_DISPLAY, INITR_GREENTAB);
+				EEPROM.update(EEPROM_DISPLAY, BGR_DISP);
+				setDisplayMode(1);
 				break;
 			}
 			if (!digitalRead(SW_T3)) {
-				EEPROM.update(EEPROM_DISPLAY, INITR_BLACKTAB);
-				tft.initR(INITR_BLACKTAB);
-				tft.setRotation(1);
+				EEPROM.update(EEPROM_DISPLAY, RGB_DISP);
+				setDisplayMode(0);
 				break;
 			}
 		}
-		tft.fillScreen(ST7735_BLACK);
-		tft.setTextColor(ST7735_YELLOW);
-		tft.drawBitmap(0, 20, maiskolben, 160, 64, ST7735_YELLOW);
+		tft.fillScreen(BLACK);
+		tft.setTextColor(YELLOW);
+		tft.drawBitmap(0, 20, maiskolben, 160, 64, YELLOW);
 		tft.setCursor(20,86);
-		tft.setTextColor(ST7735_YELLOW);
+		tft.setTextColor(YELLOW);
 		tft.setTextSize(2);
 		tft.print("Maiskolben");
 		tft.setCursor(35,104);
@@ -132,15 +152,13 @@ void setup(void) {
 		delay(4000);
 		while (!digitalRead(SW_T3) || !digitalRead(SW_T1)) delay(100);
 	} else {
-		tft.initR(EEPROM.read(EEPROM_DISPLAY));
+		setDisplayMode(EEPROM.read(EEPROM_DISPLAY) == BGR_DISP);
 	}
 #endif
 #ifdef INSTALL
-	//EEPROM.update(EEPROM_INSTALL, 0);
 	if (EEPROM.read(EEPROM_INSTALL) != EEPROM_CHECK) {
-		tft.setRotation(1);
-		tft.setTextColor(ST7735_WHITE, ST7735_BLACK);
-		tft.fillScreen(ST7735_BLACK);
+		tft.fillScreen(BLACK);
+		tft.setTextColor(RED, BLACK);
 		tft.setCursor(0,0);
 		tft.setTextSize(2);
 		tft.println("Installation");
@@ -148,18 +166,46 @@ void setup(void) {
 			analogWrite(HEAT_LED, 255-abs(i));
 			delay(1);
 		}
+		uint16_t adc1 = 0, adc2 = 0;
 		while (digitalRead(SW_STBY)) {
 			int t = getTemperature();
+			uint16_t adc = analogRead(TEMP_SENSE);
 			Serial.println(t);
-			digitalWrite(HEATER_PWM, !digitalRead(SW_T1) | !digitalRead(SW_T2) | !digitalRead(SW_T3) | !digitalRead(SW_UP) | !digitalRead(SW_DOWN));
+			digitalWrite(HEATER_PWM, !digitalRead(SW_T1) | !digitalRead(SW_T2) | !digitalRead(SW_T3)/* | !digitalRead(SW_UP) | !digitalRead(SW_DOWN)*/);
+			if (!digitalRead(SW_DOWN)) {
+				if (!adc) {
+					digitalWrite(HEATER_PWM, HIGH);
+				} else {
+					adc1 = adc;
+				}
+			}
+			if (!digitalRead(SW_UP)) {
+				if (!adc) {
+					digitalWrite(HEATER_PWM, HIGH);
+				} else {
+					adc2 = adc;
+				}
+			}
 			tft.setCursor(0,18);
 			tft.print(t);
 			tft.println("  ");
+			tft.print(adc);
+			tft.println("   ");
+			tft.println(adc * adc_gain + adc_offset);
+			if (adc1 != 0 && adc2 != 0) {
+				adc_gain = DELTA_REF_T / (float)(adc2 - adc1);
+				adc_offset = REF_T1 - adc_gain * adc1;
+				tft.println(adc_gain);
+				tft.println(adc_offset);
+			}
 			delay(50);
 		}
 		EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
 		EEPROM.update(EEPROM_VERSION, EE_VERSION);
 		EEPROM.update(EEPROM_INSTALL, EEPROM_CHECK);
+		EEPROM.put(EEPROM_ADCTTG, adc_gain);
+		EEPROM.put(EEPROM_ADCOFF, adc_offset);
+		
 		tft.println("done.");
 		delay(1000);
 		asm volatile("jmp 0");
@@ -168,17 +214,16 @@ void setup(void) {
 	if (EEPROM.read(EEPROM_VERSION) != EE_VERSION) {
 		force_menu = true;
 	}
-	tft.fillScreen(ST7735_BLACK);
-	tft.setRotation(1);
+	tft.fillScreen(BLACK);
 	uint8_t options = EEPROM.read(EEPROM_OPTIONS);
 	autopower = options & 1;
 	bootheat = (options >> 1) & 1;
 	if (force_menu) optionMenu();
 	else {
 		updateRevision();
-		tft.drawBitmap(0, 20, maiskolben, 160, 64, ST7735_YELLOW);
+		tft.drawBitmap(0, 20, maiskolben, 160, 64, YELLOW);
 		tft.setCursor(20,86);
-		tft.setTextColor(ST7735_YELLOW);
+		tft.setTextColor(YELLOW);
 		tft.setTextSize(2);
 		tft.print("Maiskolben");
 		tft.setCursor(50,110);
@@ -189,8 +234,9 @@ void setup(void) {
 		tft.print("HW Revision ");
 		tft.print(revision);
 		//Allow Options to be set at startup
+		delay(100);
 		attachInterrupt(digitalPinToInterrupt(SW_STBY), optionMenu, LOW);
-		for (int i = 1; i < 11 && !menu_dismissed; i++) {
+		for (int i = 0; i < 10 && !menu_dismissed; i++) {
 			digitalWrite(HEAT_LED, i % 2);
 			delay(250);
 		}
@@ -225,7 +271,7 @@ void setup(void) {
 	for (uint8_t i = 0; i < 50; i++)
 		measureVoltage(); //measure average 50 times to get realistic results
 	
-	tft.fillScreen(ST7735_BLACK);
+	tft.fillScreen(BLACK);
 	last_measured = getTemperature();
 	Timer1.initialize(1000);
 	Timer1.attachInterrupt(timer_isr);
@@ -235,6 +281,8 @@ void setup(void) {
 		threshold_counter = TEMP_UNDER_THRESHOLD;
 		setOff(false);
 	}
+	EEPROM.get(EEPROM_ADCTTG, adc_gain);
+	EEPROM.get(EEPROM_ADCOFF, adc_offset);
 }
 
 void updateRevision(void) {	
@@ -251,14 +299,19 @@ void updateRevision(void) {
 #endif
 }
 
+void setDisplayMode(boolean bgr) {
+	tft.colorSpace(bgr);
+	tft.setRotation(3);
+}
+
 void optionMenu(void) {
-	tft.fillScreen(ST7735_BLACK);
+	tft.fillScreen(BLACK);
 	digitalWrite(HEAT_LED, LOW);
 	tft.setTextSize(2);
 	tft.setCursor(0,0);
-	tft.setTextColor(ST7735_WHITE);
+	tft.setTextColor(WHITE);
 	tft.println("Options\n");
-	tft.setTextColor(ST7735_WHITE);
+	tft.setTextColor(WHITE);
 	tft.setCursor(10,112);
 	tft.print("ON  OFF EXIT");
 	uint8_t options = 2;
@@ -268,26 +321,26 @@ void optionMenu(void) {
 		if (redraw) {
 			tft.setCursor(0,36);
 			#ifdef SHUTOFF_ACTIVE
-				tft.setTextColor(autopower?ST7735_GREEN:ST7735_RED);
+				tft.setTextColor(autopower?GREEN:RED);
 			#else
-				tft.setTextColor(ST7735_GRAY);
+				tft.setTextColor(GRAY);
 			#endif
 			tft.println(" Autoshutdown");
 			#ifdef BOOTHEAT_ACTIVE
-				tft.setTextColor(bootheat?ST7735_GREEN:ST7735_RED);
+				tft.setTextColor(bootheat?GREEN:RED);
 			#else
-				tft.setTextColor(ST7735_GRAY);
+				tft.setTextColor(GRAY);
 			#endif
 			tft.println(" Heat on boot");
 			
 			tft.setCursor(0, (opt+2)*18);
-			tft.setTextColor(ST7735_WHITE);
+			tft.setTextColor(WHITE);
 			tft.print(">");
 			redraw = false;
 		}
 		if (!digitalRead(SW_UP)) {
 			tft.setCursor(0, (opt+2)*18);
-			tft.setTextColor(ST7735_BLACK);
+			tft.setTextColor(BLACK);
 			tft.print(">");
 			opt = (opt+options-1)%options;
 			while (!digitalRead(SW_UP)) delay(100);
@@ -295,7 +348,7 @@ void optionMenu(void) {
 		}
 		if (!digitalRead(SW_DOWN)) {
 			tft.setCursor(0, (opt+2)*18);
-			tft.setTextColor(ST7735_BLACK);
+			tft.setTextColor(BLACK);
 			tft.print(">");
 			opt = (opt+1)%options;
 			while (!digitalRead(SW_DOWN)) delay(100);
@@ -320,6 +373,10 @@ void optionMenu(void) {
 	EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
 	updateRevision();
 	EEPROM.update(EEPROM_VERSION, EE_VERSION);
+	if (EEPROM.read(EEPROM_VERSION) < 30) {
+		EEPROM.put(EEPROM_ADCTTG, ADC_TO_TEMP_GAIN);
+		EEPROM.put(EEPROM_ADCOFF, ADC_TO_TEMP_OFFSET);
+	}
 	menu_dismissed = true;
 }
 
@@ -332,6 +389,29 @@ void updateEEPROM(void) {
 	EEPROM.update(8, set_t >> 8);
 	EEPROM.update(9, set_t & 0xFF);
 	EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
+}
+
+void powerDown(void) {
+	if (power_source != POWER_LIPO) {
+		power_down = false;
+		return;
+	}
+	//Timer1.stop();
+	setOff(true);
+	delay(10);
+	tft.fillScreen(BLACK);
+	tft.setTextSize(4);
+	tft.setTextColor(RED);
+	tft.setCursor(50,40);
+	tft.print("OFF");
+	delay(3000);
+	SPI.end();
+	digitalWrite(POWER, LOW);
+	pinMode(POWER, OUTPUT);
+	delay(100);
+	force_redraw = true;
+	power_down = false;
+	Timer1.start(); //unsuccessful
 }
 
 int getTemperature(void) {
@@ -349,7 +429,7 @@ int getTemperature(void) {
 		analogWrite(HEATER_PWM, pwm); //switch heater back to last value
 	}
 	//return round(adc < 210 ? (((float)adc) * 0.530805 + 38.9298) : (((float)adc) * 0.415375 + 64.6123)); //old conversion
-	return round(((float) adc) * ADC_TO_TEMP_GAIN + ADC_TO_TEMP_OFFSET);
+	return round(((float) adc) * adc_gain + adc_offset);
 }
 
 void measureVoltage(void) {
@@ -393,13 +473,19 @@ uint16_t median(uint8_t analogIn) {
 }
 
 void timer_sw_poll(void) {
+	if (power_down) return;
 	if (!digitalRead(SW_STBY)) {
 		if (cnt_off_press == 100) {
 			setOff(!off);
 		}
-		cnt_off_press = min(101, cnt_off_press+1);
+		if (cnt_off_press == 200 && power_source == POWER_LIPO) {
+			setOff(true);
+			power_down = true;
+			return;
+		}
+		cnt_off_press = min(201, cnt_off_press+1);
 	} else {
-		if (cnt_off_press > 0 && cnt_off_press != 101) {
+		if (cnt_off_press > 0 && cnt_off_press <= 100) {
 			setStandby(!stby);
 		}
 		cnt_off_press = 0;
@@ -502,74 +588,77 @@ void setOff(boolean state) {
 }
 
 void display(void) {
+	if (force_redraw) tft.fillScreen(BLACK);
 	int16_t temperature = cur_t; //buffer volatile value
 	boolean yell = stby || (stby_layoff && blink);
-	tft.drawCircle(20,63,8, off?ST7735_RED:yell?ST7735_YELLOW:ST7735_GREEN);
-	tft.drawCircle(20,63,7,off?ST7735_RED:yell?ST7735_YELLOW:ST7735_GREEN);
-	tft.fillRect(19,55,3,3,ST7735_BLACK);
-	tft.drawFastVLine(20,53,10, off?ST7735_RED:yell?ST7735_YELLOW:ST7735_GREEN);
+	tft.drawCircle(20,63,8, off?RED:yell?YELLOW:GREEN);
+	tft.drawCircle(20,63,7,off?RED:yell?YELLOW:GREEN);
+	tft.fillRect(19,55,3,3,BLACK);
+	tft.drawFastVLine(20,53,10, off?RED:yell?YELLOW:GREEN);
 	if (error != NO_ERROR) {
-		if (error != error_old) {
+		if (error != error_old || force_redraw) {
 			error_old = error;
 			tft.setTextSize(1);
-			tft.setTextColor(ST7735_RED, ST7735_BLACK);
+			tft.setTextColor(RED, BLACK);
 			tft.setCursor(0,96);
 			switch (error) {
 				case EXCESSIVE_FALL:
-					tft.print("Error: Temperature dropped\nTip slipped out?");
+					tft.print(F("Error: Temperature dropped\nTip slipped out?"));
 					break;
 				case NOT_HEATING:
-					tft.print("Error: Not heating\nWeak power source or short");
+					tft.print(F("Error: Not heating\nWeak power source or short"));
 					break;
 				case BATTERY_LOW:
-					tft.print("Error: Battery low\nReplace or charge");
+					tft.print(F("Error: Battery low\nReplace or charge"));
 					break;
 				case USB_ONLY:
-					tft.print("Error: Power too low\nConnect power >5V");
+					tft.print(F("Error: Power too low\nConnect power >5V"));
 					break;
 				case NO_TIP:
-					tft.print("Error: No tip connected\nTip slipped out?");
+					tft.print(F("Error: No tip connected\nTip slipped out?"));
 					break;
 			}
 			tft.setTextSize(2);
-			tft.setTextColor(ST7735_YELLOW, ST7735_BLACK);
+			tft.setTextColor(YELLOW, BLACK);
 			tft.setCursor(10,112);
-			tft.print("         OK ");
+			tft.print(F("         OK "));
 			
-			tft.setTextColor(ST7735_RED, ST7735_BLACK);
+			tft.setTextColor(RED, BLACK);
 			tft.setCursor(36,26);
 			tft.setTextSize(3);
-			tft.print(" ERR");
+			tft.print(F(" ERR  "));
 		}
 	} else {
-		if (error != error_old) {
-			tft.fillRect(0, 96, 160, 16, ST7735_BLACK);
+		if (error != error_old || force_redraw) {
+			tft.fillRect(0, 96, 160, 16, BLACK);
 			error_old = NO_ERROR;
 		}
 		tft.setTextSize(2);
 		tft.setCursor(15,112);
-		tft.setTextColor(ST7735_WHITE, ST7735_BLACK);
+		tft.setTextColor(WHITE, BLACK);
 		tft.print(stored[0]);
 		tft.write(' ');
 		tft.print(stored[1]);
 		tft.write(' ');
 		tft.print(stored[2]);
 		
-		if (set_t_old != set_t || old_stby != (stby || stby_layoff)) {
+		if (set_t_old != set_t || old_stby != (stby || stby_layoff) || force_redraw) {
 			tft.setCursor(36,26);
 			tft.setTextSize(3);
 			if (stby || stby_layoff) {
 				old_stby = true;
-				tft.setTextColor(ST7735_YELLOW, ST7735_BLACK);
-				tft.print("STBY");
+				tft.setTextColor(YELLOW, BLACK);
+				tft.print(F("STBY  "));
 			} else {
 				old_stby = false;
 				set_t_old = set_t;
-				tft.setTextColor(ST7735_WHITE, ST7735_BLACK);
+				tft.setTextColor(WHITE, BLACK);
 				tft.write(' ');
 				tft.print(set_t);
-				tft.fillTriangle(149, 50, 159, 50, 154, 38, (set_t < TEMP_MAX) ? ST7735_WHITE : ST7735_GRAY);
-				tft.fillTriangle(149, 77, 159, 77, 154, 90, (set_t > TEMP_MIN) ? ST7735_WHITE : ST7735_GRAY);
+				tft.write(247);
+				tft.write('C');
+				tft.fillTriangle(149, 50, 159, 50, 154, 38, (set_t < TEMP_MAX) ? WHITE : GRAY);
+				tft.fillTriangle(149, 77, 159, 77, 154, 90, (set_t > TEMP_MIN) ? WHITE : GRAY);
 			}
 		}
 		if (!off) {
@@ -581,7 +670,7 @@ void display(void) {
 				} else {
 					tout = min(max(0,(last_temperature_drop + STANDBY_TIMEOUT - (millis())/1000)), STANDBY_TIMEOUT);
 				}
-				tft.setTextColor(stby?ST7735_RED:ST7735_YELLOW, ST7735_BLACK);
+				tft.setTextColor(stby?RED:YELLOW, BLACK);
 				tft.setTextSize(2);
 				tft.setCursor(46,78);
 				if (tout < 600) tft.write('0');
@@ -592,33 +681,35 @@ void display(void) {
 			}
 #endif
 		} else if (temperature != 999) {
-			tft.fillRect(46, 78, 60, 20, ST7735_BLACK);
+			tft.fillRect(46, 78, 60, 20, BLACK);
 		}
 	}
-	if (cur_t_old != temperature) {
+	if (cur_t_old != temperature || force_redraw) {
 		tft.setCursor(36,52);
 		tft.setTextSize(3);
 		if (temperature == 999) {
-			tft.setTextColor(ST7735_RED, ST7735_BLACK);
-			tft.print(" ERR");
+			tft.setTextColor(RED, BLACK);
+			tft.print(F(" ERR  "));
 			tft.setCursor(44,76);
 			tft.setTextSize(2);
-			tft.print("NO TIP");
+			tft.print(F("NO TIP"));
 		} else {
 			if (cur_t_old == 999) {
-				tft.fillRect(44,76,72,16,ST7735_BLACK);
+				tft.fillRect(44,76,72,16,BLACK);
 			}
-			tft.setTextColor(off ? temperature < TEMP_COLD ? ST7735_CYAN : ST7735_RED : tft.Color565(min(10,abs(temperature-target_t))*25, 250 - min(10,max(0,(abs(temperature-target_t)-10)))*25, 0), ST7735_BLACK);
+			tft.setTextColor(off ? temperature < TEMP_COLD ? CYAN : RED : tft.Color565(min(10,abs(temperature-target_t))*25, 250 - min(10,max(0,(abs(temperature-target_t)-10)))*25, 0), BLACK);
 			if (temperature < TEMP_COLD) {
-				tft.print("COLD");
+				tft.print(F("COLD  "));
 			} else {
 				tft.write(' ');
 				if (temperature < 100) tft.write(' ');
 				tft.print(temperature);
+				tft.write(247);
+				tft.write('C');
 			}
 		}
 		if (temperature < cur_t_old)
-			tft.fillRect(max(0, (temperature - TEMP_COLD)/2.4), 0, 160-max(0, (temperature - TEMP_COLD)/2.4), BAR_HEIGHT, ST7735_BLACK);
+			tft.fillRect(max(0, (temperature - TEMP_COLD)/2.4), 0, 160-max(0, (temperature - TEMP_COLD)/2.4), BAR_HEIGHT, BLACK);
 		else if (cur_t != 999) {
 			for (int16_t i = max(0, (cur_t_old - TEMP_COLD)/2.4); i < max(0, (temperature - TEMP_COLD)/2.4); i++) {
 				tft.drawFastVLine(i, 0, BAR_HEIGHT, tft.Color565(min(255, max(0, i*5)), min(255, max(0, 450-i*2.5)), 0));
@@ -627,7 +718,7 @@ void display(void) {
 		cur_t_old = temperature;
 	}
 	if (v_c3 > 1.0) {
-		tft.setTextColor(ST7735_YELLOW, ST7735_BLACK);
+		tft.setTextColor(YELLOW, BLACK);
 		tft.setCursor(122,5);
 		tft.setTextSize(2);
 		int power = min(15,v)*min(15,v)/4.8*pwm/255;
@@ -640,22 +731,23 @@ void display(void) {
 		} else if (v_c2 < 1.0) {
 			power_source = POWER_CORD;
 		} else {
-			power_source = POWER_LIPO;
+			power_source = POWER_LIPO; //Set charging later to not redraw if charging mode toggles
 		}
-		if (power_source != power_source_old) {
-			tft.fillRect(0, 5, 128, 20, ST7735_BLACK);
-			tft.fillRect(11, 25, 21, 20, ST7735_BLACK);
+		if (power_source != power_source_old || force_redraw) {
+			tft.fillRect(0, 5, 128, 20, BLACK);
+			tft.fillRect(11, 25, 21, 20, BLACK);
 			switch (power_source) {
+				case POWER_CHARGING:
 				case POWER_LIPO:
 					for (uint8_t i = 0; i < 3; i++) {
-						tft.fillRect(11, 5+i*14, 20, 12, ST7735_WHITE);
-						tft.fillRect(12, 6+i*14, 18, 10, ST7735_BLACK);
-						tft.drawFastVLine(31,8+i*14,6,ST7735_WHITE);
+						tft.drawRect(11, 5+i*14, 20, 12, WHITE);
+						//tft.fillRect(12, 6+i*14, 18, 10, BLACK);
+						tft.drawFastVLine(31,8+i*14,6,WHITE);
 					}
 					break;
 				case POWER_USB:
 					tft.setTextSize(1);
-					tft.setTextColor(ST7735_RED, ST7735_BLACK);
+					tft.setTextColor(RED, BLACK);
 					tft.setCursor(0,5);
 					tft.print("USB power only\nConnect power supply.");
 					if (!off) setError(USB_ONLY);
@@ -666,23 +758,30 @@ void display(void) {
 		if (power_source == POWER_CORD) {
 			/*if (v > v_c3) {
 				tft.setTextSize(2);
-				tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
+				tft.setTextColor(GREEN, BLACK);
 				tft.setCursor(0,5);
 				tft.print(v);
 				tft.print("V ");
 			} else {*/
 				tft.drawBitmap(0, 5, power_cord, 24, 9, tft.Color565(max(0, min(255, (14.5-v)*112)), max(0, min(255, (v-11)*112)), 0));
 			//}
-		} else if (power_source == POWER_LIPO) {
+		} else if (power_source == POWER_LIPO || power_source == POWER_CHARGING) {
 			float volt[] = {v_c1, v_c2-v_c1, v_c3-v_c2};
+			uint8_t volt_disp[] = {max(1,min(16,(volt[0]-3.0)*14.2)), max(1,min(16,(volt[1]-3.0)*14.2)), max(1,min(16,(volt[2]-3.0)*14.2))};
+			if (power_source == POWER_CHARGING) {
+				uint8_t p = min(16, (millis() / 100) % 20);
+				for (uint8_t i = 0; i < 3; i++) {
+					volt_disp[i] = max(0, min(volt_disp[i], p));
+				}
+			}
 			for (uint8_t i = 0; i < 3; i++) {
 				if (volt[i] < 3.20) {
 					setError(BATTERY_LOW);
-					tft.fillRect(13, 7+14*i, max(1,min(16,(volt[i]-3.0)*14.2)), 8, blink?ST7735_RED:ST7735_BLACK);
+					tft.fillRect(13, 7+14*i, volt_disp[i], 8, blink?RED:BLACK);
 				} else {
-					tft.fillRect(13, 7+14*i, max(1,min(16,(volt[i]-3.0)*14.2)), 8, tft.Color565(250-min(250, max(0, (volt[i]-3.4)*1000.0)), max(0,min(250, (volt[i]-3.15)*1000.0)), 0));
+					tft.fillRect(13, 7+14*i, volt_disp[i], 8, tft.Color565(250-min(250, max(0, (volt[i]-3.4)*1000.0)), max(0,min(250, (volt[i]-3.15)*1000.0)), 0));
 				}
-				tft.fillRect(13+max(1,min(16,(volt[i]-3.0)*14.2)), 7+14*i, 17-max(1,min(16,(volt[i]-3.0)*14.2)), 8, ST7735_BLACK);
+				tft.fillRect(13+volt_disp[i], 7+14*i, 17-volt_disp[i], 8, BLACK);
 			}
 		}
 	}
@@ -715,6 +814,7 @@ void display(void) {
 	}
 #endif
 	blink = !blink;
+	force_redraw = false;
 }
 
 void compute(void) {
@@ -724,7 +824,7 @@ void compute(void) {
 	cur_t = getTemperature();
 	if (off) {
 		target_t = 0;
-		if (cur_t < TEMP_THRESHOLD) {
+		if (cur_t < adc_offset + TEMP_RISE) {
 			threshold_counter = TEMP_UNDER_THRESHOLD; //reset counter
 		}
 	} else {
@@ -734,9 +834,9 @@ void compute(void) {
 			target_t = set_t;
 		}
 		if (cur_t-last_measured <= -30 && last_measured != 999) {
-			setError(EXCESSIVE_FALL); //decrease of more than 30 degree is not realistic, short of ring and gnd is common.
+			setError(EXCESSIVE_FALL); //decrease of more than 30 degree is uncommon, short of ring and gnd is possible.
 		}
-		if (cur_t < TEMP_THRESHOLD) {
+		if (cur_t < adc_offset + TEMP_RISE) {
 			if (threshold_counter == 0) {
 				setError(NOT_HEATING); //temperature is not reached in desired time, short of sensor and gnd too?
 			} else {
@@ -867,6 +967,9 @@ void loop(void) {
 		}
 	}
 	delay(DELAY_MAIN_LOOP);
+	if (power_down) {
+		powerDown();
+	}
 }
 
 uint16_t serialReadTemp() {

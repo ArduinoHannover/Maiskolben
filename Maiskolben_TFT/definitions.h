@@ -1,16 +1,17 @@
-#define VERSION			"2.8"
+#define VERSION			"3.0"
 #define EE_VERSION      27
 #define EEPROM_CHECK	42
 
 #define BAR_HEIGHT       4 //Should be no bigger than 5
+
 /*
  * TIPS ARE SPECIFIED FOR 450 DEGREE MAX
  * If read 1023 on Analog in, the tip is turned off automatically
  */
 #define TEMP_MAX    450
-#define TEMP_MIN    100
+#define TEMP_MIN    200
 #define TEMP_STBY   150
-#define TEMP_COLD    70
+#define TEMP_COLD   (adc_offset + 15)
 
 #define SHUTOFF_ACTIVE
 #define BOOTHEAT_ACTIVE
@@ -18,8 +19,8 @@
 #define STANDBY_TIMEOUT 240 // seconds without any significant temperature drop, if exceeded it will standby
 #define OFF_TIMEOUT     900 // seconds in standby before turning off
 
-#define TEMP_THRESHOLD        50 //threshold voltage, that must be exceeded in given time:
-#define TEMP_UNDER_THRESHOLD 150 //*10ms
+#define TEMP_RISE             30 //threshold temperature, that must be exceeded delta in given time:
+#define TEMP_UNDER_THRESHOLD  80 // x (TIME_COMPUTE_IN_MS + DELAY_BEFORE_MEASURE)
 #define THRES_MAX_DECEED       2 //max times the threshold temperature may be undercut by the current temperature
 
 //Temperature in degree to rise at least in given time
@@ -41,7 +42,7 @@
 #define SW_T1       9
 #define TFT_CS      10
 //      MOSI        11
-#define TFT_BL      12 //use MISO PULLUP as switch
+#define POWER       12 //use MISO PULLUP as switch
 //      SCK         13
 #define TEMP_SENSE  A0
 #define STBY_NO     A1
@@ -50,6 +51,7 @@
 #define BAT_C1      A4
 #define TFT_DC      A5
 #ifdef PIN_A7
+#define CHARGEDET   A6
 #define VIN         A7
 #endif
 
@@ -64,22 +66,29 @@
 #define DELAY_MAIN_LOOP             10
 #define PID_SAMPLE_TIME             10
 
-#define ADC_TO_TEMP_GAIN             0.574503
-#define ADC_TO_TEMP_OFFSET          43.5
+#define ADC_TO_TEMP_GAIN             0.54 //default value if no calibration is performed
+#define ADC_TO_TEMP_OFFSET          42.8  //default value if no calibration is performed
 
 #define EEPROM_SET_T     8
 #define EEPROM_VERSION  10
 #define EEPROM_DISPLAY  11
 #define EEPROM_OPTIONS  12
 #define EEPROM_REVISION 13
+#define EEPROM_ADCTTG   14
+#define EEPROM_ADCOFF   (EEPROM_ADCTTG + sizeof(float))
+
 #define EEPROM_INSTALL  42
+#define REF_T1          275
+#define REF_T2          410
+#define DELTA_REF_T     (REF_T2 - REF_T1)
 
 
 typedef enum POWER_SOURCE {
 	NO_INIT,
 	POWER_USB,
 	POWER_CORD,
-	POWER_LIPO
+	POWER_LIPO,
+	POWER_CHARGING
 } p_source;
 typedef enum ERROR_TYPE {
 	NO_ERROR,

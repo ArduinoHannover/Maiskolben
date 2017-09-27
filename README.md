@@ -9,14 +9,14 @@ Die Spitzen selbst sind für 40€ im Handel erhältlich, die original Weller-St
 Für den einfachen Maker oder Hobbyist auf keinen Fall ein Produkt, das beim Onlineshopping ohne weitere Überlegungen in den Warenkorb wandert.
 Der *Maiskolben* hingegen ist eine erschwingliche Lösung für lediglich 40€, mit der die Spitzen ebenso angesteuert werden können.
 
-* Betrieb mit 12V Netzteil oder 3s LiPo (Modellbau-Akku)
+* Betrieb mit 12V Netzteil (oder bis zu 24V mit Fertigplatine) oder 3s LiPo (Modellbau-Akku)
 * Spannungsüberwachung (bei Akku für alle 3 Zellen und automatische Abschaltung bei zu geringer Ladung)
 * Einfaches Wechseln von Spitzen mittels Klinken-Buchse/-Kabel
 * 3 individuelle Temperatur-Presets
-* Temperaturbereich von 100-400°C
+* Temperaturbereich von 200-450°C
 * Gut ablesbares Farbdisplay mit allen nötigen Informationen
 * Auto-Standby (entweder sensor- oder zeitgesteuert auf 150°C)
-* Auto-Wakeup (entweder sensorgesteuert oder durch berühren von Lötschwamm, Messingwolle oder Lötstelle)
+* Auto-Wakeup (entweder sensorgesteuert oder durch Berühren von Lötschwamm, Messingwolle oder Lötstelle)
 * USB-Schnittstelle zur Überwachung oder Steuerung mittels PC
 * Potentialausgleich-/ESD-Buchse (über 1MΩ an GND)
 * Optisches Feedback der Heizleistung durch LED
@@ -27,8 +27,8 @@ Der *Maiskolben* hingegen ist eine erschwingliche Lösung für lediglich 40€, 
 
 ## Stromzufuhr
 
-Die Stromzufuhr wird wahlweise über die Hohlstecker-Buchse (10-18V) *ODER* die JST-XH4 (11,1V) Buchse angeschlossen.
-Niemals beide gleichzeitig anschließen!
+Die Stromzufuhr wird wahlweise über die Hohlstecker-Buchse (10-24V) *ODER* die JST-XH4 (11,1V) Buchse angeschlossen.
+Bei Versionen < 3.0 niemals beide gleichzeitig anschließen!
 Der Lötkolben (Weller RT-XX, z.B. RT-1 für feine Lötarbeiten) wird über die Klinkenbuchse mit einer Verlängerung angesteckt.
 
 ## Display
@@ -44,11 +44,19 @@ Am unteren Rand sind die drei Presets zu sehen.
 
 Nach dem Anstecken von Netzteil und Lötspitze kann die Station durch halten der Power-Taste (unten rechts) eingeschaltet werden.
 Basierend auf der letzten Einstellung wird die angezeigte Soll- (Power-Symbol grün) oder die Standby-Temperatur (Symbol gelb) angefahren.
+
 Mittels der Tasten rechts vom Display (Pfeile) lässt sich die Soll-Temperatur nach oben und unten korrigieren.
-Sollte einer der Pfeile auf dem Display ausgegraut sein, so lässt sich über diese Temperatur hinaus keine weitere Änderung mehr vornehmen (100 ≥ T ≥ 400).
+Sollte einer der Pfeile auf dem Display ausgegraut sein, so lässt sich über diese Temperatur hinaus keine weitere Änderung mehr vornehmen (200 ≥ T ≥ 450).
+
+### Presets
+
 Mittels der Preset-Tasten unter dem Bildschirm lassen sich voreingestellte Temperaturen als Soll-Temperatur setzen und die Station gleichzeitig aus dem Standby aufwecken.
-Durch gedrückthalten einer der drei Tasten wird der dort gespeicherte Wert durch die aktuelle Soll-Temperatur überschrieben.
+Durch Gedrückthalten einer der drei Tasten wird der dort gespeicherte Wert durch die aktuelle Soll-Temperatur überschrieben.
 Wird die Power-Taste nur kurz gedrückt, so wird der Standby-Zustand umgeschaltet.
+
+### Startmenü
+
+Es gibt ein verstecktes Menü, in dem sich der automatische Standby abschalten und ein automatisches Hochfahren auf die zuletzt gewählte Temperatur bei Spannungsversorgung aktiviert werden können. Um in dieses Menü zu gelangen, muss beim Anlegen der Spannungsversorgung während des Blinkens der LED die Power-Taste betätigt werden.
 
 ## Fehlermeldungen
 
@@ -79,15 +87,18 @@ Um die aktuellste Software auf den Maiskolbe zu übertragen, muss zunächst die 
 In diesem Repository befinden sich zwei Programme, zum einen Maiskolben_LCD für die Hardware-Revision 1.0 und Maiskolben_TFT für Hardware-Revisionen ab 1.5.
 Die .ino Datei kann mit Arduino geöffnet werden.
 Der Serielle-Port muss nach Herstellen einer Verbindung zwischen Maiskolben und PC unter _Werkzeuge_ > _Port_ ausgewählt werden.
-Unter umständen muss zuvor noch der [Treiber](http://www.wch.cn/download/CH341SER_ZIP.html) für den USB-Seriell-Wandler installiert werden.
-Als _Board_ sollte _Arduino Nano_ mit _Prozessor_: _ATmega328_ ausgewählt werden.
+Unter umständen muss zuvor noch der [CH340 Treiber](http://www.wch.cn/download/CH341SER_ZIP.html) für den USB-Seriell-Wandler installiert werden.
+Als _Board_ sollte _Arduino Nano_ mit _Prozessor: ATmega328_ ausgewählt werden.
 Über _Sketch_ > _Hochladen_ bzw. den Pfeil nach Rechts in der oberen Leiste kann das Programm übertragen werden.
+
+### Bibliotheken
 
 Unter Umständen müssen vorher folgende Libraries noch über _Sketch_ > _Bibliothek einbinden_ > _.ZIP Bibliothek hinzufügen..._ eingebunden werden:
 
 * [TimerOne](https://github.com/PaulStoffregen/TimerOne)
 * [PID_v1](https://github.com/br3ttb/Arduino-PID-Library/)
-* [Adafruit_ST7735](https://github.com/adafruit/Adafruit-ST7735-Library)
+* ~~[Adafruit_ST7735](https://github.com/adafruit/Adafruit-ST7735-Library)~~ (Software Version < 3.0)
+* [TFT_ILI9163C](https://github.com/ArduinoHannover/TFT_ILI9163C)
 * [Adafruit_GFX](https://github.com/adafruit/Adafruit-GFX-Library)
 
 Dafür muss von den entsprechenden Seiten zuvor die ZIP heruntergeladen werden.
@@ -95,7 +106,38 @@ Diese kann dann in dem Dateibrowser, der sich nach obiger Anleitung öffnet, sel
 
 ### Changelog
 
-* 2.0 Initiale Version für GitHub (TFT)
+* 3.0
+  * Geänderte Display-Bibliothek (vgl. [Abschnitt Bibliotheken](#Bibliotheken))
+  * Mehr Strings im Flash statt im RAM
+  * Anpassungen um einen Maiskolben V3.2 im LiPo-Betrieb vollständig abzuschalten
+  * Limitierung der Minimaltemperatur auf 200°C
+  * `°C` wird mit bei Soll- und Ist-Temperatur angezeigt
+  * Interne Temperatur-Kalibrierung für jeden Maiskolben individuell (bisher nur für Kalibrierung ab Werk)
+* 2.8
+  * Zeilenhöhe des Balkens ist nun variabel
+  * Temperaturen als `#define` gesetzt
+  * Temperaturberechnung wieder angepasst
+  * EEPROM-Fehler behoben
+* 2.7
+  * TFT-Reset eingebaut
+* 2.6
+  * Schreibfehler korrigiert
+  * Anpassungen an unterschiedliche Hardwareausführungen verbessert
+  * Beim Aufruf des Menüs kommt man nach schließen direkt zum Programm
+  * Autopower verfeinert
+* 2.5
+  * Interne Testroutinen hinzugefügt
+  * Anpassung an Hardwarerevision ≥ 3.0
+  * Wattanzeige hinzugefügt
+* 2.4
+  * Spannungsanzeige gegen Steckersymbol getauscht
+* 2.3
+  * Anpassung an unterschiedliche Display-Treiber (BGR/RGB)
+  * Geänderte Temperaturmessung
+* 2.1
+  * Bidirektionale Steuerung über serielle Schnittstelle
+* 2.0
+  * Initiale Version für GitHub (TFT)
   * Auto-Standby hinzugefügt
   * Parameter angepasst
 
