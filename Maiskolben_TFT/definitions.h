@@ -1,15 +1,17 @@
-#define VERSION			"2.5"
-#define EE_VERSION      25
+#define VERSION			"3.0"
+#define EE_VERSION      27
 #define EEPROM_CHECK	42
 
-#define STBY_TEMP	150
+#define BAR_HEIGHT       4 //Should be no bigger than 5
+
 /*
- * SOFTWARE CAN'T MEASURE MORE THAN 489 DUE TO RESISTOR CONFIGURATION, IF SET TO >= 489 IT'S LIKELY TO KILL YOUR TIP!
  * TIPS ARE SPECIFIED FOR 450 DEGREE MAX
- * If read 1023 on Analog in, the tip is turned off
+ * If read 1023 on Analog in, the tip is turned off automatically
  */
-#define MAX_TEMP	450
-#define MIN_TEMP	100
+#define TEMP_MAX    450
+#define TEMP_MIN    200
+#define TEMP_STBY   150
+#define TEMP_COLD   (adc_offset + 15)
 
 #define SHUTOFF_ACTIVE
 #define BOOTHEAT_ACTIVE
@@ -17,69 +19,76 @@
 #define STANDBY_TIMEOUT 240 // seconds without any significant temperature drop, if exceeded it will standby
 #define OFF_TIMEOUT     900 // seconds in standby before turning off
 
-#define TEMP_THRESHOLD	50 //threshold voltage, that must be exceeded in given time:
-#define TEMP_UNDER_THRESHOLD 150 //*10ms
-#define THRES_MAX_DECEED 2 //max times the threshold temperature may be undercut by the current temperature
+#define TEMP_RISE             30 //threshold temperature, that must be exceeded delta in given time:
+#define TEMP_UNDER_THRESHOLD  80 // x (TIME_COMPUTE_IN_MS + DELAY_BEFORE_MEASURE)
+#define THRES_MAX_DECEED       2 //max times the threshold temperature may be undercut by the current temperature
 
 //Temperature in degree to rise at least in given time
-#define TEMP_MIN_RISE 10
+#define TEMP_MIN_RISE         10
 //Time in that the temperature must rise by the set temperature
-#define TEMP_RISE_TIME 1000
+#define TEMP_RISE_TIME      1000
 
 //#define OLD_PWM
 
-//      RX			0
-//      TX			1
-#define SW_STBY		2
-#define HEATER_PWM	3
-#define SW_DOWN		4
-#define HEAT_LED	5
-#define SW_UP		6
-#define SW_T3		7
-#define SW_T2		8
-#define SW_T1		9
-#define TFT_CS		10
-//      MOSI		11
-#define TFT_BL      12 //use MISO PULLUP as switch
-//      SCK			13
-#define TEMP_SENSE	A0
-#define STBY_NO		A1
-#define BAT_C3		A2
-#define BAT_C2		A3
-#define BAT_C1		A4
-#define TFT_DC		A5
+//      RX          0
+//      TX          1
+#define SW_STBY     2
+#define HEATER_PWM  3
+#define SW_DOWN     4
+#define HEAT_LED    5
+#define SW_UP       6
+#define SW_T3       7
+#define SW_T2       8
+#define SW_T1       9
+#define TFT_CS      10
+//      MOSI        11
+#define POWER       12 //use MISO PULLUP as switch
+//      SCK         13
+#define TEMP_SENSE  A0
+#define STBY_NO     A1
+#define BAT_C3      A2
+#define BAT_C2      A3
+#define BAT_C1      A4
+#define TFT_DC      A5
 #ifdef PIN_A7
-#define VIN			A7
+#define CHARGEDET   A6
+#define VIN         A7
 #endif
 
-#define kp			0.03
-#define ki			0.00001
-#define kd			0.0
+#define kp          0.03
+#define ki          0.00001
+#define kd          0.0
 
-#define TIME_COMPUTE_IN_MS 10
+#define TIME_COMPUTE_IN_MS          10
 #define TIME_MEASURE_VOLTAGE_IN_MS 200
-#define TIME_SW_POLL_IN_MS 10
-#define DELAY_BEFORE_MEASURE 10
-#define DELAY_MAIN_LOOP 10
-#define PID_SAMPLE_TIME 10
+#define TIME_SW_POLL_IN_MS          10
+#define DELAY_BEFORE_MEASURE        10
+#define DELAY_MAIN_LOOP             10
+#define PID_SAMPLE_TIME             10
 
-#define ADC_TO_TEMP_GAIN 0.39
-#define ADC_TO_TEMP_OFFSET 23.9
-#define CTRL_GAIN 10
+#define ADC_TO_TEMP_GAIN             0.54 //default value if no calibration is performed
+#define ADC_TO_TEMP_OFFSET          42.8  //default value if no calibration is performed
 
 #define EEPROM_SET_T     8
 #define EEPROM_VERSION  10
 #define EEPROM_DISPLAY  11
 #define EEPROM_OPTIONS  12
 #define EEPROM_REVISION 13
+#define EEPROM_ADCTTG   14
+#define EEPROM_ADCOFF   (EEPROM_ADCTTG + sizeof(float))
+
 #define EEPROM_INSTALL  42
+#define REF_T1          275
+#define REF_T2          410
+#define DELTA_REF_T     (REF_T2 - REF_T1)
 
 
 typedef enum POWER_SOURCE {
 	NO_INIT,
 	POWER_USB,
 	POWER_CORD,
-	POWER_LIPO
+	POWER_LIPO,
+	POWER_CHARGING
 } p_source;
 typedef enum ERROR_TYPE {
 	NO_ERROR,
