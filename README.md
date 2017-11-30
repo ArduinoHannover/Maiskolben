@@ -106,6 +106,9 @@ Diese kann dann in dem Dateibrowser, der sich nach obiger Anleitung öffnet, sel
 
 ### Changelog
 
+* 3.1
+  * Option im Menü eingebaut, um zwischen Fahrenheit und Celsius zu wechseln
+  * Bug behoben, der bei falsch initialisiertem EEPROM die Temperaturberechnung nicht richtig ausgeführt hat
 * 3.0
   * Geänderte Display-Bibliothek (vgl. [Abschnitt Bibliotheken](#Bibliotheken))
   * Mehr Strings im Flash statt im RAM
