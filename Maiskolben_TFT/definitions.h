@@ -1,5 +1,5 @@
-#define VERSION			"3.0"
-#define EE_VERSION      27
+#define VERSION			"3.1"
+#define EE_VERSION      31
 #define EEPROM_CHECK	42
 
 #define BAR_HEIGHT       4 //Should be no bigger than 5

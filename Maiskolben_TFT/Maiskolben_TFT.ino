@@ -54,7 +54,7 @@ uint32_t sendNext;
 uint32_t last_temperature_drop;
 uint32_t last_on_state;
 boolean wasOff = true, old_stby = false;
-boolean autopower = true, bootheat = false;
+boolean autopower = true, bootheat = false, fahrenheit = false;
 uint8_t revision = 1;
 boolean menu_dismissed = false;
 boolean autopower_repeat_under = false;
@@ -200,7 +200,7 @@ void setup(void) {
 			}
 			delay(50);
 		}
-		EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
+		EEPROM.update(EEPROM_OPTIONS,  (fahrenheit << 2) | (bootheat << 1) | autopower);
 		EEPROM.update(EEPROM_VERSION, EE_VERSION);
 		EEPROM.update(EEPROM_INSTALL, EEPROM_CHECK);
 		EEPROM.put(EEPROM_ADCTTG, adc_gain);
@@ -217,7 +217,8 @@ void setup(void) {
 	tft.fillScreen(BLACK);
 	uint8_t options = EEPROM.read(EEPROM_OPTIONS);
 	autopower = options & 1;
-	bootheat = (options >> 1) & 1;
+	bootheat = options & 2;
+	fahrenheit = options & 4;
 	if (force_menu) optionMenu();
 	else {
 		updateRevision();
@@ -281,6 +282,10 @@ void setup(void) {
 		threshold_counter = TEMP_UNDER_THRESHOLD;
 		setOff(false);
 	}
+	if (EEPROM.read(EEPROM_ADCTTG) == 255) { //Override unset values from older versions
+		EEPROM.put(EEPROM_ADCTTG, adc_gain);
+		EEPROM.put(EEPROM_ADCOFF, adc_offset);
+	}
 	EEPROM.get(EEPROM_ADCTTG, adc_gain);
 	EEPROM.get(EEPROM_ADCOFF, adc_offset);
 }
@@ -314,7 +319,7 @@ void optionMenu(void) {
 	tft.setTextColor(WHITE);
 	tft.setCursor(10,112);
 	tft.print("ON  OFF EXIT");
-	uint8_t options = 2;
+	uint8_t options = 3;
 	uint8_t opt = 0;
 	boolean redraw = true;
 	while (true) {
@@ -332,6 +337,8 @@ void optionMenu(void) {
 				tft.setTextColor(GRAY);
 			#endif
 			tft.println(" Heat on boot");
+			tft.setTextColor(fahrenheit?GREEN:RED);
+			tft.println(" Fahrenheit");
 			
 			tft.setCursor(0, (opt+2)*18);
 			tft.setTextColor(WHITE);
@@ -358,6 +365,7 @@ void optionMenu(void) {
 			switch (opt) {
 				case 0: autopower = 1; break;
 				case 1: bootheat = 1; break;
+				case 2: fahrenheit = 1; break;
 			}
 			redraw = true;
 		}
@@ -365,12 +373,13 @@ void optionMenu(void) {
 			switch (opt) {
 				case 0: autopower = 0; break;
 				case 1: bootheat = 0; break;
+				case 2: fahrenheit = 0; break;
 			}
 			redraw = true;
 		}
 		if (!digitalRead(SW_T3)) break;
 	}
-	EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
+	EEPROM.update(EEPROM_OPTIONS, (fahrenheit << 2) | (bootheat << 1) | autopower);
 	updateRevision();
 	EEPROM.update(EEPROM_VERSION, EE_VERSION);
 	if (EEPROM.read(EEPROM_VERSION) < 30) {
@@ -388,7 +397,7 @@ void updateEEPROM(void) {
 	}
 	EEPROM.update(8, set_t >> 8);
 	EEPROM.update(9, set_t & 0xFF);
-	EEPROM.update(EEPROM_OPTIONS, (bootheat << 1) | autopower);
+	EEPROM.update(EEPROM_OPTIONS, (fahrenheit << 2) | (bootheat << 1) | autopower);
 }
 
 void powerDown(void) {
@@ -412,6 +421,10 @@ void powerDown(void) {
 	force_redraw = true;
 	power_down = false;
 	Timer1.start(); //unsuccessful
+}
+
+float toFahrenheit(float t) {
+	return t * 1.8 + 32;
 }
 
 int getTemperature(void) {
@@ -587,6 +600,14 @@ void setOff(boolean state) {
 	last_measured = cur_t;
 }
 
+void printTemp(float t) {
+	if (fahrenheit) {
+		t = toFahrenheit(t);
+	}
+	if (t < 100) tft.write(' ');
+	tft.print((int)t);
+}
+
 void display(void) {
 	if (force_redraw) tft.fillScreen(BLACK);
 	int16_t temperature = cur_t; //buffer volatile value
@@ -636,11 +657,11 @@ void display(void) {
 		tft.setTextSize(2);
 		tft.setCursor(15,112);
 		tft.setTextColor(WHITE, BLACK);
-		tft.print(stored[0]);
+		printTemp(stored[0]);
 		tft.write(' ');
-		tft.print(stored[1]);
+		printTemp(stored[1]);
 		tft.write(' ');
-		tft.print(stored[2]);
+		printTemp(stored[2]);
 		
 		if (set_t_old != set_t || old_stby != (stby || stby_layoff) || force_redraw) {
 			tft.setCursor(36,26);
@@ -654,9 +675,9 @@ void display(void) {
 				set_t_old = set_t;
 				tft.setTextColor(WHITE, BLACK);
 				tft.write(' ');
-				tft.print(set_t);
+				printTemp(set_t);
 				tft.write(247);
-				tft.write('C');
+				tft.write(fahrenheit?'F':'C');
 				tft.fillTriangle(149, 50, 159, 50, 154, 38, (set_t < TEMP_MAX) ? WHITE : GRAY);
 				tft.fillTriangle(149, 77, 159, 77, 154, 90, (set_t > TEMP_MIN) ? WHITE : GRAY);
 			}
@@ -702,10 +723,9 @@ void display(void) {
 				tft.print(F("COLD  "));
 			} else {
 				tft.write(' ');
-				if (temperature < 100) tft.write(' ');
-				tft.print(temperature);
+				printTemp(temperature);
 				tft.write(247);
-				tft.write('C');
+				tft.write(fahrenheit?'F':'C');
 			}
 		}
 		if (temperature < cur_t_old)
