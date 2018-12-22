@@ -23,10 +23,11 @@
 #define TEMP_UNDER_THRESHOLD  80 // x (TIME_COMPUTE_IN_MS + DELAY_BEFORE_MEASURE)
 #define THRES_MAX_DECEED       2 //max times the threshold temperature may be undercut by the current temperature
 
-//Temperature in degree to rise at least in given time
-#define TEMP_MIN_RISE         10
-//Time in that the temperature must rise by the set temperature
-#define TEMP_RISE_TIME      1000
+#define WATCH_TEMP_PERIOD     (1500/20) // Time allowed (in meas cycles ~20ms) to raise temperature
+#define WATCH_TEMP_REBOUND   (1000/20) // Time after, when target has been reached previously, the temp may drop without re-arming the protection
+#define WATCH_TEMP_INCREASE   5 // by this degrees.
+#define WATCH_TEMP_DEACTIVATE 50 // deacticate the watching when we are this near the target (in °C) -- to avoid that loads
+
 
 //#define OLD_PWM
 
@@ -96,7 +97,8 @@ typedef enum ERROR_TYPE {
 	NOT_HEATING,
 	NO_TIP,
 	BATTERY_LOW,
-	USB_ONLY
+	USB_ONLY,
+	FAILED_TO_HEAT
 } error_type;
 
 const unsigned char power_cord [] PROGMEM =  {
