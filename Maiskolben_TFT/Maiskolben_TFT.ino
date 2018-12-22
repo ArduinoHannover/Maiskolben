@@ -741,7 +741,7 @@ void display(void) {
 		tft.setTextColor(YELLOW, BLACK);
 		tft.setCursor(122,5);
 		tft.setTextSize(2);
-		int power = min(15,v)*min(15,v)/4.8*pwm/255;
+		int power =v*v/4.8*pwm/255;
 		if (power < 10) tft.write(' ');
 		tft.print(power);
 		tft.write('W');
