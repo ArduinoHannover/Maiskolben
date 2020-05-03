@@ -87,8 +87,8 @@ Um die aktuellste Software auf den Maiskolbe zu übertragen, muss zunächst die 
 In diesem Repository befinden sich zwei Programme, zum einen Maiskolben_LCD für die Hardware-Revision 1.0 und Maiskolben_TFT für Hardware-Revisionen ab 1.5.
 Die .ino Datei kann mit Arduino geöffnet werden.
 Der Serielle-Port muss nach Herstellen einer Verbindung zwischen Maiskolben und PC unter _Werkzeuge_ > _Port_ ausgewählt werden.
-Unter umständen muss zuvor noch der [CH340 Treiber](http://www.wch.cn/download/CH341SER_ZIP.html) für den USB-Seriell-Wandler installiert werden.
-Als _Board_ sollte _Arduino Nano_ mit _Prozessor: ATmega328_ ausgewählt werden.
+Unter Umständen muss zuvor noch der [CH340 Treiber](http://www.wch.cn/download/CH341SER_ZIP.html) für den USB-Seriell-Wandler installiert werden.
+Als _Board_ sollte _Arduino Nano_ mit _Prozessor: ATmega328 (Old Bootloader)_ ausgewählt werden.
 Über _Sketch_ > _Hochladen_ bzw. den Pfeil nach Rechts in der oberen Leiste kann das Programm übertragen werden.
 
 ### Bibliotheken
