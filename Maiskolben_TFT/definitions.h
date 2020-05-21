@@ -13,6 +13,8 @@
 #define TEMP_STBY   150
 #define TEMP_COLD   (adc_offset + 15)
 
+#define PMAX (40) // max watts to pump into the tip. (note: Weller specifies the tips as 40W; the big RT-11 has 55W)
+
 #define SHUTOFF_ACTIVE
 #define BOOTHEAT_ACTIVE
 

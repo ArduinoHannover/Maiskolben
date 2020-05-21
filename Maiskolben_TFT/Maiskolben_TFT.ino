@@ -872,10 +872,19 @@ void compute(void) {
 	last_measured = cur_t;
 
 	heaterPID.Compute();
-	if (error != NO_ERROR || off)
+
+	// Power limitation.
+	// Tips are rated for 40W, do not exceed that.
+	// note t-hat we have inherently only 50% PWM, as we have it on 10ms and then wait with pwm off for another 10ms.
+	// Formula: P = 0.5 * ( U^2 / ( R )) * (pwm)
+	float pwm_max = 2 * PMAX / ((v*v) / 2.4);
+	if (pwm_max > pid_val) pwm_max = pid_val;
+
+	if (error != NO_ERROR || off) {
 		pwm = 0;
-	else
-		pwm = min(255,pid_val*255);
+	} else {
+		pwm = min(255, pwm_max * 255);
+	}
 	analogWrite(HEATER_PWM, pwm);
 }
 
