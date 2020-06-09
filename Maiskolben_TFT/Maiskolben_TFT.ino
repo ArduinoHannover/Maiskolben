@@ -638,6 +638,10 @@ void display(void) {
 				case NO_TIP:
 					tft.print(F("Error: No tip connected\nTip slipped out?"));
 					break;
+				case FAILED_TO_HEAT:
+					tft.print(F("Error: Heating\nTemp not increasing."));
+					break;
+
 			}
 			tft.setTextSize(2);
 			tft.setTextColor(YELLOW, BLACK);
@@ -838,12 +842,19 @@ void display(void) {
 }
 
 void compute(void) {
+	static int16_t rising_protection_milestone_temperature = 0;
+	static int16_t rising_protection_timeout = WATCH_TEMP_PERIOD;
+	static int16_t rising_rebound_timeout = WATCH_TEMP_PERIOD;
+	static bool rising_protection_target_reached = false;
+
 #ifndef USE_TFT_RESET
 	setStandbyLayoff(!digitalRead(STBY_NO)); //do not measure while heater is active, potential is not neccessary == GND
 #endif
 	cur_t = getTemperature();
 	if (off) {
 		target_t = 0;
+		rising_protection_milestone_temperature = 0;
+		rising_protection_timeout = WATCH_TEMP_PERIOD;
 		if (cur_t < adc_offset + TEMP_RISE) {
 			threshold_counter = TEMP_UNDER_THRESHOLD; //reset counter
 		}
@@ -856,6 +867,44 @@ void compute(void) {
 		if (cur_t-last_measured <= -30 && last_measured != 999) {
 			setError(EXCESSIVE_FALL); //decrease of more than 30 degree is uncommon, short of ring and gnd is possible.
 		}
+
+		// if target_t has been lowered, make sure that we also lower that milestone temperature
+		if (target_t < rising_protection_milestone_temperature) {
+			rising_protection_milestone_temperature = target_t;
+		}
+
+		// ensure that the temperature is actually rising when it should.
+		if(target_t - cur_t > WATCH_TEMP_DEACTIVATE ) {
+			// temperature is lower than setpoint by WATCH_TEMP_DEACTIVATE °C.
+			if (rising_protection_target_reached) {
+				// if previously we've been at target, e.g cleaning the tip might drop the temp significantly in a short time.
+				// so we need to temporarily suspend the protection and also continue it with a lower milestone.
+				if(rising_rebound_timeout) { rising_rebound_timeout--; }
+				else {
+					// rebound timeout expired, arm protection again.
+					rising_protection_milestone_temperature = cur_t + WATCH_TEMP_INCREASE;
+					rising_protection_target_reached = false;
+				}
+			} else {
+				// target was previously not reached, see if next milestone has been reached.
+				if (cur_t >= rising_protection_milestone_temperature + WATCH_TEMP_INCREASE) {
+					rising_protection_milestone_temperature = cur_t	+ WATCH_TEMP_INCREASE; // Yes, raise the bar.
+					rising_protection_timeout = WATCH_TEMP_PERIOD; // and give a new time window.
+				} else {
+					rising_protection_timeout--; // milestone not reached.
+				}
+			}
+		} else {
+			// we are near the target, time to disarm the protection..
+			rising_protection_timeout = WATCH_TEMP_PERIOD;
+			rising_protection_target_reached = true;
+		}
+
+		if(0 == rising_protection_timeout) {
+			// milestone not reached, E-STOP.
+			setError(FAILED_TO_HEAT);
+		}
+
 		if (cur_t < adc_offset + TEMP_RISE) {
 			if (threshold_counter == 0) {
 				setError(NOT_HEATING); //temperature is not reached in desired time, short of sensor and gnd too?
